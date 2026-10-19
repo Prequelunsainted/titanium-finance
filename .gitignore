@@ -1,17 +1,13 @@
-# Arquivos de compilação do PyInstaller
-build/
-dist/
-*.spec
-
-# Cache do Python
 __pycache__/
 *.pyc
-
-# Banco de dados local e variáveis de ambiente
-*.db
-.env
-
-# Ambientes virtuais (se usar venv ou env)
+*.egg-info/
+build/
+dist/
+.venv/
 venv/
 env/
-.venv/
+.env
+
+# Bancos locais da versão 1.x e relatórios exportados
+*.db
+*.csv
