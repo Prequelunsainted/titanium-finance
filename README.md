@@ -26,6 +26,7 @@ O **Titanium** é um app desktop de controle financeiro pessoal feito em Python.
 - 🔁 **Migração automática:** na primeira execução, os dados do `financeiro.db` da versão 1.x são importados.
 - ⌨️ **Atalhos:** `Ctrl+N` nova movimentação · `Ctrl+F` buscar · `Ctrl+1/2/3` trocar de tela · `Ctrl+E` exportar · `Delete` excluir · duplo clique para editar.
 - 🖥️ **Modo terminal** para scripts e automações.
+- 📱 **Versão mobile** instalável (PWA), com os mesmos dados em formato CSV.
 
 | Tema claro | Nova movimentação |
 |---|---|
@@ -85,6 +86,38 @@ Também é possível instalar como comando (`pip install .`) e rodar apenas `tit
 
 O banco é o `titanium.db` e as preferências ficam em `settings.json`. Para usar outro arquivo, passe `--db caminho.db` (ou defina a variável `TITANIUM_DB`).
 
+## 📱 Versão mobile (Android e iPhone)
+
+Na pasta [`mobile/`](mobile) há uma versão do Titanium para celular, feita como **PWA**: instala na tela inicial, abre em tela cheia, funciona offline e tem o mesmo visual do app de computador (painel, gráficos, lançamentos e orçamentos).
+
+![Titanium no celular](docs/mobile.png)
+
+**Instalar:** abra **<https://prequelunsainted.github.io/Controle-financeiro1.2/mobile/>** no celular (ative antes em *Settings → Pages → Deploy from a branch → `main` / root*) e
+- **Android (Chrome):** menu ⋮ → *Instalar app* (ou use o botão **Instalar app** da aba *Mais*);
+- **iPhone (Safari):** botão Compartilhar → *Adicionar à Tela de Início*.
+
+Recursos: botão **+** para lançar em segundos (data nativa do celular, categoria padrão por tipo e repetição do tipo e da categoria pela descrição), gráfico de barras com toque no mês, rosca de gastos por categoria, orçamentos com alertas, busca e filtros, tema claro/escuro/sistema e exportação em **CSV** e backup **JSON**.
+
+> Os dados ficam **só no aparelho** (armazenamento do navegador) e nunca são enviados a nenhum servidor. O CSV do celular e o do computador têm o mesmo formato: use *Exportar* em um e *Importar* no outro para levar seus lançamentos de um lado para o outro.
+
+Para testar no computador (ou conhecer com dados de exemplo, sem salvar nada):
+
+```bash
+python -m http.server 8000 --directory mobile
+# abra http://localhost:8000  ou  http://localhost:8000/?demo
+```
+
+Testes do núcleo JavaScript (precisa do Node 18+; também rodam abrindo `mobile/tests.html` no navegador):
+
+```bash
+cd mobile
+npm test
+```
+
+> Ao publicar uma nova versão, troque o número em `mobile/sw.js` (`CACHE`) para o celular baixar a atualização.
+
+---
+
 ## 🏗️ Gerando o executável
 
 ```bash
@@ -115,7 +148,8 @@ titanium/
 ├── demo.py        # dados de exemplo do modo --demo
 ├── __main__.py    # ponto de entrada e linha de comando
 └── assets/titanium.png
-tests/             # testes automatizados
+mobile/            # versão PWA para Android e iPhone (core.js, store.js, app.js, sw.js...)
+tests/             # testes automatizados (Python)
 build_exe.py       # gera o Titanium.exe com PyInstaller
 app.py             # atalho compatível com a versão 1.x
 ```
@@ -126,7 +160,7 @@ app.py             # atalho compatível com a versão 1.x
 python -m unittest discover -s tests -v
 ```
 
-Os testes também rodam automaticamente no GitHub Actions a cada push.
+Os testes (Python e JavaScript) também rodam automaticamente no GitHub Actions a cada push.
 
 ---
 

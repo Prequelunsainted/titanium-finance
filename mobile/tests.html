@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Titanium — testes</title>
+  <style>body{font:14px/1.5 ui-monospace,Consolas,monospace;padding:16px}.ok{color:#047857}.fail{color:#DC2626;font-weight:700}</style>
+</head>
+<body>
+  <h1>Testes do núcleo (core.js)</h1>
+  <pre id="out">executando…</pre>
+  <script type="module">
+    const lines = [];
+    const original = console.log;
+    console.log = (...args) => lines.push(args.join(" "));
+    const { outcome } = await import("./tests/core.test.js");
+    console.log = original;
+    document.getElementById("out").innerHTML = lines
+      .map((l) => `<span class="${l.startsWith("FAIL") ? "fail" : "ok"}">${l}</span>`)
+      .join("\n");
+    document.title = outcome.failed ? `FALHOU (${outcome.failed})` : "TODOS OS TESTES PASSARAM";
+  </script>
+</body>
+</html>

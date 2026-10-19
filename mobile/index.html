@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Titanium Finance</title>
+  <meta name="description" content="Controle financeiro pessoal: painel, gráficos e orçamentos. Funciona offline e os dados ficam só no seu aparelho.">
+  <meta name="theme-color" content="#F4F7F6">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Titanium">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <img class="logo" src="icons/icon-192.png" alt="" width="44" height="44">
+      <div class="title">
+        <h1 id="title">Visão geral</h1>
+        <p id="subtitle"></p>
+      </div>
+    </header>
+
+    <div class="seg period" id="period" role="radiogroup" aria-label="Período"></div>
+
+    <main id="view" tabindex="-1"></main>
+  </div>
+
+  <button class="fab" id="fab" type="button" aria-label="Nova movimentação">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <nav class="tabs" id="tabs" aria-label="Telas">
+    <div class="tabs-inner">
+      <button type="button" data-page="Painel" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>
+        <span>Painel</span>
+      </button>
+      <button type="button" data-page="Movimentações">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        <span>Lançamentos</span>
+      </button>
+      <button type="button" data-page="Orçamentos">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4"/></svg>
+        <span>Orçamentos</span>
+      </button>
+      <button type="button" data-page="Mais">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <span>Mais</span>
+      </button>
+    </div>
+  </nav>
+
+  <dialog id="sheet" aria-labelledby="sheet-title">
+    <form id="sheet-form" novalidate>
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <h2 id="sheet-title">Nova movimentação</h2>
+
+      <div class="seg kind" role="radiogroup" aria-label="Tipo">
+        <label><input type="radio" name="kind" value="Despesa" checked><span>Despesa</span></label>
+        <label><input type="radio" name="kind" value="Receita"><span>Receita</span></label>
+      </div>
+
+      <label class="field">
+        <span>Descrição</span>
+        <input id="f-description" type="text" maxlength="120" autocomplete="off" placeholder="Ex.: Supermercado" enterkeyhint="next">
+      </label>
+
+      <div class="row2">
+        <label class="field">
+          <span>Valor (R$)</span>
+          <input id="f-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" enterkeyhint="done">
+        </label>
+        <label class="field">
+          <span>Data</span>
+          <input id="f-date" type="date">
+        </label>
+      </div>
+      <div class="chips">
+        <button type="button" class="chip" data-date="0">Hoje</button>
+        <button type="button" class="chip" data-date="1">Ontem</button>
+      </div>
+
+      <label class="field">
+        <span>Categoria</span>
+        <select id="f-category"></select>
+      </label>
+      <label class="field" id="f-new-wrap" hidden>
+        <span>Nome da nova categoria</span>
+        <input id="f-new" type="text" maxlength="40" autocomplete="off">
+      </label>
+
+      <p class="error" id="sheet-error" role="alert"></p>
+
+      <div class="sheet-actions">
+        <button type="button" class="btn danger" id="f-delete" hidden>Excluir</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="f-cancel">Cancelar</button>
+        <button type="submit" class="btn primary">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <input type="file" id="file" accept=".csv,.json,text/csv,application/json" hidden>
+</body>
+</html>
