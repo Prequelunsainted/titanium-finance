@@ -1,4 +1,4 @@
-"""Gera o executável do Windows em ``dist/Titanus.exe``.
+"""Gera o executável do Windows em ``dist/Titanium.exe``.
 
 Uso:
     pip install -r requirements.txt pyinstaller
@@ -12,8 +12,8 @@ from pathlib import Path
 
 import PyInstaller.__main__
 
-from titanus import __version__
-from titanus.assets import icon_image
+from titanium import __version__
+from titanium.assets import icon_image
 
 ROOT = Path(__file__).resolve().parent
 BUILD = ROOT / "build"
@@ -21,7 +21,7 @@ BUILD = ROOT / "build"
 
 def make_icon() -> Path:
     BUILD.mkdir(exist_ok=True)
-    path = BUILD / "titanus.ico"
+    path = BUILD / "titanium.ico"
     icon_image("#2DD4BF", size=256).save(
         path, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
     )
@@ -33,20 +33,20 @@ def main() -> None:
     PyInstaller.__main__.run(
         [
             str(ROOT / "app.py"),
-            "--name=Titanus",
+            "--name=Titanium",
             "--onefile",
             "--windowed",
             "--noconfirm",
             "--clean",
             f"--icon={icon}",
-            f"--add-data={ROOT / 'titanus' / 'assets' / 'titanus.png'}{os.pathsep}titanus/assets",
+            f"--add-data={ROOT / 'titanium' / 'assets' / 'titanium.png'}{os.pathsep}titanium/assets",
             "--collect-data=customtkinter",
             f"--distpath={ROOT / 'dist'}",
             f"--workpath={BUILD}",
             f"--specpath={BUILD}",
         ]
     )
-    print(f"\nTitanus {__version__} pronto em {ROOT / 'dist' / 'Titanus.exe'}")
+    print(f"\nTitanium {__version__} pronto em {ROOT / 'dist' / 'Titanium.exe'}")
 
 
 if __name__ == "__main__":

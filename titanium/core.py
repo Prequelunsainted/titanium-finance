@@ -1,4 +1,4 @@
-"""Regras financeiras do Titanus — sem dependência de interface ou banco.
+"""Regras financeiras do Titanium — sem dependência de interface ou banco.
 
 Conversão de valores e datas, períodos, totais, séries mensais e orçamentos.
 Tudo aqui é usado pela GUI, pela linha de comando e pelos testes.

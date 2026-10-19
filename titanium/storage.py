@@ -40,12 +40,12 @@ def data_dir() -> Path:
         base = Path.home() / "Library" / "Application Support"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
-    return base / "Titanus"
+    return base / "Titanium"
 
 
 def default_db_path() -> Path:
-    override = os.environ.get("TITANUS_DB")
-    return Path(override) if override else data_dir() / "titanus.db"
+    override = os.environ.get("TITANIUM_DB")
+    return Path(override) if override else data_dir() / "titanium.db"
 
 
 class Storage:

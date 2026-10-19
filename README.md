@@ -1,4 +1,4 @@
-# 🏛️ Titanus Finance Control
+# 🏛️ Titanium Finance
 
 ![Python](https://img.shields.io/badge/Python-3.10+-306998?style=for-the-badge&logo=python&logoColor=white)
 ![CustomTkinter](https://img.shields.io/badge/CustomTkinter-UI-2DD4BF?style=for-the-badge)
@@ -6,7 +6,7 @@
 ![Matplotlib](https://img.shields.io/badge/Matplotlib-gráficos-11557C?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-O **Titanus** é um app desktop de controle financeiro pessoal feito em Python. Ele reúne em um só painel o saldo do período, as receitas e despesas, a evolução mês a mês, os gastos por categoria e os orçamentos, tudo 100% offline e salvo localmente em SQLite.
+O **Titanium** é um app desktop de controle financeiro pessoal feito em Python. Ele reúne em um só painel o saldo do período, as receitas e despesas, a evolução mês a mês, os gastos por categoria e os orçamentos, tudo 100% offline e salvo localmente em SQLite.
 
 ![Painel no tema escuro](docs/painel-escuro.png)
 
@@ -50,13 +50,13 @@ pip install -r requirements.txt
 Interface gráfica:
 
 ```bash
-python -m titanus
+python -m titanium
 ```
 
 Quer conhecer o app sem digitar nada? Abra com dados de exemplo. Eles ficam só na memória e não tocam nos seus dados:
 
 ```bash
-python -m titanus --demo
+python -m titanium --demo
 ```
 
 > O antigo `python app.py` continua funcionando.
@@ -64,26 +64,26 @@ python -m titanus --demo
 Terminal:
 
 ```bash
-python -m titanus adicionar "Supermercado" 150,50 -c Alimentação
-python -m titanus adicionar "Salário" 5.000 --receita -c Trabalho --data 05/10
-python -m titanus listar --periodo mes
-python -m titanus resumo --periodo ano
-python -m titanus exportar relatorio.csv --periodo tudo
-python -m titanus importar financeiro.db     # dados da versão 1.x
-python -m titanus --help
+python -m titanium adicionar "Supermercado" 150,50 -c Alimentação
+python -m titanium adicionar "Salário" 5.000 --receita -c Trabalho --data 05/10
+python -m titanium listar --periodo mes
+python -m titanium resumo --periodo ano
+python -m titanium exportar relatorio.csv --periodo tudo
+python -m titanium importar financeiro.db     # dados da versão 1.x
+python -m titanium --help
 ```
 
-Também é possível instalar como comando (`pip install .`) e rodar apenas `titanus`.
+Também é possível instalar como comando (`pip install .`) e rodar apenas `titanium`.
 
 ### Onde ficam os dados
 
 | Sistema | Pasta |
 |---|---|
-| Windows | `%APPDATA%\Titanus\` |
-| macOS | `~/Library/Application Support/Titanus/` |
-| Linux | `~/.local/share/Titanus/` |
+| Windows | `%APPDATA%\Titanium\` |
+| macOS | `~/Library/Application Support/Titanium/` |
+| Linux | `~/.local/share/Titanium/` |
 
-O banco é o `titanus.db` e as preferências ficam em `settings.json`. Para usar outro arquivo, passe `--db caminho.db` (ou defina a variável `TITANUS_DB`).
+O banco é o `titanium.db` e as preferências ficam em `settings.json`. Para usar outro arquivo, passe `--db caminho.db` (ou defina a variável `TITANIUM_DB`).
 
 ## 🏗️ Gerando o executável
 
@@ -92,7 +92,7 @@ pip install -r requirements.txt pyinstaller
 python build_exe.py
 ```
 
-O arquivo fica em `dist/Titanus.exe`.
+O arquivo fica em `dist/Titanium.exe`.
 
 ---
 
@@ -100,23 +100,23 @@ O arquivo fica em `dist/Titanus.exe`.
 
 A interface foi desenhada antes no Figma, com variáveis de cor para os temas claro e escuro e componentes reutilizáveis (card de indicador, linha de movimentação, linha de orçamento e item de menu). O código usa exatamente as mesmas cores.
 
-- Arquivo no Figma: [Titanus Finance — Hub](https://www.figma.com/design/hYQlEvC2TZuf26hcK3QDy2)
+- Arquivo no Figma: [Hub no Figma](https://www.figma.com/design/hYQlEvC2TZuf26hcK3QDy2)
 
 ## 🗂️ Estrutura
 
 ```
-titanus/
+titanium/
 ├── core.py        # regras: valores, datas, períodos, totais, orçamentos (sem interface, 100% testável)
 ├── storage.py     # SQLite: movimentações, orçamentos, importação da v1 e CSV
 ├── app.py         # interface gráfica (CustomTkinter)
 ├── charts.py      # gráficos Matplotlib embutidos, com dica ao passar o mouse
-├── assets.py      # logo e ícone gerados a partir da silhueta do Titanus
+├── assets.py      # logo e ícone gerados a partir da silhueta do Titanium
 ├── settings.py    # preferências salvas entre execuções
 ├── demo.py        # dados de exemplo do modo --demo
 ├── __main__.py    # ponto de entrada e linha de comando
-└── assets/titanus.png
+└── assets/titanium.png
 tests/             # testes automatizados
-build_exe.py       # gera o Titanus.exe com PyInstaller
+build_exe.py       # gera o Titanium.exe com PyInstaller
 app.py             # atalho compatível com a versão 1.x
 ```
 

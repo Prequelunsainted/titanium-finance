@@ -8,11 +8,11 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from titanus.__main__ import main
-from titanus.core import EXPENSE, INCOME, Transaction
-from titanus.demo import demo_transactions
-from titanus.settings import Settings
-from titanus.storage import Storage, find_legacy_database
+from titanium.__main__ import main
+from titanium.core import EXPENSE, INCOME, Transaction
+from titanium.demo import demo_transactions
+from titanium.settings import Settings
+from titanium.storage import Storage, find_legacy_database
 
 
 class StorageTests(unittest.TestCase):
@@ -20,7 +20,7 @@ class StorageTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.folder = Path(self.tmp.name)
-        self.storage = Storage(self.folder / "titanus.db")
+        self.storage = Storage(self.folder / "titanium.db")
 
     def test_crud_and_ordering(self):
         a = self.storage.add(Transaction("Mercado", 120.5, EXPENSE, "Alimentação", date(2026, 10, 3)))

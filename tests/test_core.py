@@ -1,7 +1,7 @@
 import unittest
 from datetime import date
 
-from titanus.core import (
+from titanium.core import (
     EXPENSE,
     INCOME,
     BudgetStatus,

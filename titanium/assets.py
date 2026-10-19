@@ -1,4 +1,4 @@
-"""Imagens da interface, geradas a partir da silhueta do Titanus."""
+"""Imagens da interface, geradas a partir da silhueta do Titanium."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-SILHOUETTE = ASSETS_DIR / "titanus.png"
+SILHOUETTE = ASSETS_DIR / "titanium.png"
 
 Color = tuple[int, int, int]
 

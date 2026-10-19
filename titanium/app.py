@@ -1,4 +1,4 @@
-"""Interface gráfica do Titanus (CustomTkinter)."""
+"""Interface gráfica do Titanium (CustomTkinter)."""
 
 from __future__ import annotations
 
@@ -85,14 +85,14 @@ def _color(pair: tuple[str, str]) -> str:
     return pair[1] if ctk.get_appearance_mode() == "Dark" else pair[0]
 
 
-class TitanusApp(ctk.CTk):
+class TitaniumApp(ctk.CTk):
     def __init__(self, storage: Storage | None = None, demo: bool = False) -> None:
         self.settings = Settings.load()
         ctk.set_appearance_mode(APPEARANCE_MODES.get(self.settings.appearance, "dark"))
         super().__init__(fg_color=BG)
 
         self.demo = demo
-        self.title("Titanus Finance Control" + (" — demonstração" if demo else ""))
+        self.title("Titanium Finance" + (" — demonstração" if demo else ""))
         self._center_window(1280, 840)
         self.minsize(1120, 760)
 
@@ -187,8 +187,8 @@ class TitanusApp(ctk.CTk):
         ctk.CTkLabel(brand, image=self.logo, text="").pack(side="left")
         names = ctk.CTkFrame(brand, fg_color="transparent")
         names.pack(side="left", padx=(12, 0))
-        self._label(names, "TITANUS", 20, "bold", anchor="w").pack(anchor="w")
-        self._label(names, "Finance Control", 12, color=MUTED, anchor="w").pack(anchor="w")
+        self._label(names, "TITANIUM", 20, "bold", anchor="w").pack(anchor="w")
+        self._label(names, "Finance", 12, color=MUTED, anchor="w").pack(anchor="w")
 
         self._section_label(bar, "Menu").grid(row=1, column=0, sticky="ew", padx=26, pady=(0, 6))
         nav = ctk.CTkFrame(bar, fg_color="transparent")
@@ -490,7 +490,7 @@ class TitanusApp(ctk.CTk):
         card.grid_columnconfigure(0, weight=1)
         card.grid_rowconfigure(0, weight=1)
         columns = ("date", "description", "category", "kind", "amount")
-        self.table = ttk.Treeview(card, columns=columns, show="headings", style="Titanus.Treeview",
+        self.table = ttk.Treeview(card, columns=columns, show="headings", style="Titanium.Treeview",
                                   selectmode="browse")
         for col, text, width, anchor, stretch in (
             ("date", "Data", 110, "w", False), ("description", "Descrição", 320, "w", True),
@@ -526,14 +526,14 @@ class TitanusApp(ctk.CTk):
         style = ttk.Style(self)
         style.theme_use("default")
         card, text, muted = _color(CARD), _color(TEXT), _color(MUTED)
-        style.configure("Titanus.Treeview", background=card, fieldbackground=card, foreground=text,
+        style.configure("Titanium.Treeview", background=card, fieldbackground=card, foreground=text,
                         rowheight=int(36 * scale), borderwidth=0, relief="flat", font=(self.ui_font, 10))
-        style.configure("Titanus.Treeview.Heading", background=card, foreground=muted, borderwidth=0,
+        style.configure("Titanium.Treeview.Heading", background=card, foreground=muted, borderwidth=0,
                         relief="flat", font=(self.ui_font, 9, "bold"), padding=(6, int(8 * scale)))
-        style.map("Titanus.Treeview", background=[("selected", _color(SUBTLE_HOVER))],
+        style.map("Titanium.Treeview", background=[("selected", _color(SUBTLE_HOVER))],
                   foreground=[("selected", text)])
-        style.map("Titanus.Treeview.Heading", background=[("active", _color(SUBTLE))])
-        style.layout("Titanus.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
+        style.map("Titanium.Treeview.Heading", background=[("active", _color(SUBTLE))])
+        style.layout("Titanium.Treeview", [("Treeview.treearea", {"sticky": "nswe"})])
         self.table.tag_configure("income", foreground=_color(INCOME_COLOR))
         self.table.tag_configure("expense", foreground=_color(TEXT))
         self.table.tag_configure("odd", background=_color(INPUT))
@@ -872,7 +872,7 @@ class TitanusApp(ctk.CTk):
         path = filedialog.asksaveasfilename(
             parent=self, title="Exportar relatório CSV", defaultextension=".csv",
             filetypes=[("Planilha CSV", "*.csv")],
-            initialfile=f"titanus-{date.today():%Y-%m-%d}.csv",
+            initialfile=f"titanium-{date.today():%Y-%m-%d}.csv",
         )
         if not path:
             return
@@ -904,7 +904,7 @@ class TitanusApp(ctk.CTk):
 class TransactionDialog(ctk.CTkToplevel):
     """Janela para criar ou editar uma movimentação."""
 
-    def __init__(self, app: TitanusApp, transaction: Transaction | None) -> None:
+    def __init__(self, app: TitaniumApp, transaction: Transaction | None) -> None:
         super().__init__(app, fg_color=BG)
         self.app = app
         self.transaction = transaction
@@ -1009,7 +1009,7 @@ class TransactionDialog(ctk.CTkToplevel):
     def _field(self, master: tk.Misc, text: str) -> None:
         self.app._label(master, text, 12, "bold", MUTED, anchor="w").pack(fill="x", pady=(0, 4))
 
-    def _place_over(self, app: TitanusApp, width: int, height: int) -> None:
+    def _place_over(self, app: TitaniumApp, width: int, height: int) -> None:
         app.update_idletasks()
         scale = self._get_window_scaling()
         x = app.winfo_rootx() + (app.winfo_width() - int(width * scale)) // 2
@@ -1075,4 +1075,4 @@ class TransactionDialog(ctk.CTkToplevel):
 
 
 def run_app(storage: Storage | None = None, demo: bool = False) -> None:
-    TitanusApp(storage, demo=demo).mainloop()
+    TitaniumApp(storage, demo=demo).mainloop()

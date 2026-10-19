@@ -1,9 +1,9 @@
-"""Ponto de entrada: ``python -m titanus`` abre a interface gráfica.
+"""Ponto de entrada: ``python -m titanium`` abre a interface gráfica.
 
 Subcomandos permitem usar pelo terminal (útil em scripts)::
 
-    python -m titanus adicionar "Supermercado" 150,50 -c Alimentação
-    python -m titanus resumo --periodo mes
+    python -m titanium adicionar "Supermercado" 150,50 -c Alimentação
+    python -m titanium resumo --periodo mes
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def _plain(text: str) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="titanus", description="Titanus Finance Control — finanças pessoais.")
+    parser = argparse.ArgumentParser(prog="titanium", description="Titanium Finance — finanças pessoais.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--db", metavar="ARQUIVO", help="banco de dados a usar (padrão: pasta de dados do usuário)")
     parser.add_argument("--demo", action="store_true", help="abre o app com dados de exemplo, sem tocar nos seus")
