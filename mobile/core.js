@@ -195,7 +195,7 @@ export function comparisonLabel(period, today = todayIso()) {
 export const signed = (t) => (t.kind === INCOME ? t.amount : -t.amount);
 
 /** Valida os campos digitados e devolve uma movimentação pronta para salvar (sem id). */
-export function makeTransaction({ description, amount, kind, category, when }, today = todayIso()) {
+export function makeTransaction({ description, amount, kind, category, when, recurring = false, until = "" }, today = todayIso()) {
   const desc = String(description ?? "").split(/\s+/).filter(Boolean).join(" ");
   if (!desc) throw new ValidationError("Informe uma descrição.");
   if (desc.length > 120) throw new ValidationError("A descrição pode ter no máximo 120 caracteres.");
@@ -203,7 +203,87 @@ export function makeTransaction({ description, amount, kind, category, when }, t
   const value = typeof amount === "number" ? round2(amount) : parseAmount(amount);
   if (!(value > 0)) throw new ValidationError("O valor deve ser maior que zero.");
   const cat = String(category ?? "").split(/\s+/).filter(Boolean).join(" ") || "Outros";
-  return { description: desc, amount: value, kind, category: cat, date: parseDate(when ?? "", today) };
+  const date = parseDate(when ?? "", today);
+  const isFixed = Boolean(recurring);
+  let end = null;
+  if (isFixed && until) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(until)) throw new ValidationError("Mês final inválido.");
+    if (until < date.slice(0, 7)) throw new ValidationError("O fim do lançamento fixo não pode ser antes do início.");
+    end = until;
+  }
+  return { description: desc, amount: value, kind, category: cat, date, recurring: isFixed, until: end };
+}
+
+// ------------------------------------------------- lançamentos fixos (mensais)
+// Um lançamento "fixo" é guardado uma única vez (data = primeira ocorrência) e se repete todo mês,
+// no mesmo dia (ou no último dia do mês quando o mês é mais curto), até o mês `until` (opcional).
+
+const lastDayOf = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+/** Data em que o lançamento cai no mês que começa em `monthIso`, ou null se não cai nele. */
+export function occurrenceDate(t, monthIso) {
+  const start = monthStart(t.date);
+  if (!t.recurring) return start === monthIso ? t.date : null;
+  if (monthIso < start) return null;
+  if (t.until && monthIso.slice(0, 7) > t.until) return null;
+  if (monthIso === start) return t.date;
+  const [y, m] = parts(monthIso);
+  return toIso(y, m, Math.min(+t.date.slice(8), lastDayOf(y, m)));
+}
+
+/**
+ * Lançamentos concretos entre `start` (inclusive) e `end` (exclusivo); os fixos viram uma ocorrência por mês.
+ * `cap` limita a uma data máxima (inclusive), normalmente hoje. start/end nulos = sem limite
+ * (começo = lançamento mais antigo; fim = `cap`).
+ */
+export function expandRange(items, start, end, cap = null) {
+  let to = end;
+  if (cap !== null) { const capEnd = addDays(cap, 1); if (to === null || capEnd < to) to = capEnd; }
+  if (to === null) to = addDays(todayIso(), 1);
+  const from = start ?? items.reduce((min, t) => (t.date < min ? t.date : min), to);
+
+  const out = [];
+  for (const t of items) {
+    if (!t.recurring) { if (t.date >= from && t.date < to) out.push(t); continue; }
+    for (let m = monthStart(from < t.date ? t.date : from); m < to; m = addMonths(m, 1)) {
+      const d = occurrenceDate(t, m);
+      if (d && d >= from && d < to) out.push({ ...t, date: d });
+    }
+  }
+  return out;
+}
+
+/** Os lançamentos de um período, já com as repetições dos fixos, até `today`. */
+export const transactionsIn = (items, period, today = todayIso()) => expandRange(items, period.start, period.end, today);
+
+/** Começos de mês para o seletor "mês a mês": `back` meses antes de hoje até `ahead` depois (vira o ano sozinho). */
+export function upcomingMonths(today = todayIso(), back = 1, ahead = 12) {
+  const first = monthStart(today);
+  return Array.from({ length: back + ahead + 1 }, (_, i) => addMonths(first, i - back));
+}
+
+/** "Nov" no ano atual; "Jan/27" em outro ano. */
+export function monthLabel(monthIso, today = todayIso()) {
+  const [y, m] = parts(monthIso);
+  return y === +today.slice(0, 4) ? MONTHS_SHORT[m - 1] : `${MONTHS_SHORT[m - 1]}/${String(y).slice(2)}`;
+}
+
+export const describeMonth = (monthIso) => `${capitalize(monthName(monthIso))} de ${monthIso.slice(0, 4)}`;
+
+/** Tudo o que cai num mês (realizado e previsto), separado em fixo e avulso. */
+export function monthOverview(items, monthIso, today = todayIso()) {
+  const list = expandRange(items, monthIso, addMonths(monthIso, 1)).sort((a, b) => (a.date === b.date ? a.id - b.id : a.date < b.date ? -1 : 1));
+  const sum = (pred) => round2(list.filter(pred).reduce((a, t) => a + t.amount, 0));
+  const income = sum((t) => t.kind === INCOME), expense = sum((t) => t.kind === EXPENSE);
+  const fixedExpense = sum((t) => t.kind === EXPENSE && t.recurring);
+  const current = monthStart(today);
+  return {
+    month: monthIso, items: list, income, expense, balance: round2(income - expense),
+    fixedExpense, oneOffExpense: round2(expense - fixedExpense),
+    fixedIncome: sum((t) => t.kind === INCOME && t.recurring),
+    commitment: income > 0 ? fixedExpense / income : null,
+    status: monthIso > current ? "futuro" : monthIso === current ? "atual" : "passado",
+  };
 }
 
 export function filterTransactions(items, { period = null, kind = null, category = null, text = "" } = {}) {
@@ -241,11 +321,11 @@ export function topCategories(byCategory, limit = 5) {
 export const percentChange = (current, previous) => (previous === 0 ? null : (current - previous) / Math.abs(previous));
 
 /** Receitas e despesas dos `months` meses que terminam em `lastMonth`. */
-export function monthlySeries(items, lastMonth, months = 6) {
+export function monthlySeries(items, lastMonth, months = 6, today = todayIso()) {
   const first = addMonths(monthStart(lastMonth), -(months - 1));
   const buckets = new Map();
   for (let i = 0; i < months; i++) buckets.set(addMonths(first, i), { income: 0, expense: 0 });
-  for (const t of items) {
+  for (const t of expandRange(items, first, addMonths(first, months), today)) {
     const b = buckets.get(monthStart(t.date));
     if (b) b[t.kind === INCOME ? "income" : "expense"] += t.amount;
   }
@@ -279,8 +359,11 @@ const csvCell = (text) => (/[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}
 
 /** CSV que abre direto no Excel em português (";" e vírgula decimal) — o mesmo do app de computador. */
 export function exportCsv(items) {
-  const rows = [["Data", "Descrição", "Categoria", "Tipo", "Valor"]];
-  for (const t of items) rows.push([formatDate(t.date), t.description, t.category, t.kind, signed(t).toFixed(2).replace(".", ",")]);
+  const rows = [["Data", "Descrição", "Categoria", "Tipo", "Valor", "Recorrência", "Até"]];
+  for (const t of items) {
+    rows.push([formatDate(t.date), t.description, t.category, t.kind, signed(t).toFixed(2).replace(".", ","),
+      t.recurring ? "Fixo" : "Avulso", t.until ?? ""]);
+  }
   return "﻿" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n") + "\r\n";
 }
 
@@ -313,7 +396,7 @@ export function importCsv(text, today = todayIso()) {
   if (!rows.length) return { items: [], skipped: 0 };
   const header = rows[0].map((h) => h.trim().toLocaleLowerCase("pt-BR"));
   const col = (name) => header.indexOf(name);
-  const [iDate, iDesc, iCat, iKind, iValue] = ["data", "descrição", "categoria", "tipo", "valor"].map(col);
+  const [iDate, iDesc, iCat, iKind, iValue, iRec, iUntil] = ["data", "descrição", "categoria", "tipo", "valor", "recorrência", "até"].map(col);
   if ([iDate, iDesc, iValue].includes(-1)) return { items: [], skipped: rows.length - 1 };
 
   const items = [];
@@ -326,6 +409,8 @@ export function importCsv(text, today = todayIso()) {
       items.push(makeTransaction({
         description: row[iDesc], amount: raw.replace(/^[-+−]\s*/, ""), kind,
         category: iCat >= 0 ? row[iCat] : "", when: row[iDate] ?? "",
+        recurring: iRec >= 0 && (row[iRec] ?? "").trim().toLocaleLowerCase("pt-BR") === "fixo",
+        until: iUntil >= 0 ? (row[iUntil] ?? "").trim() : "",
       }, today));
     } catch { skipped++; }
   }
@@ -343,31 +428,38 @@ function mulberry32(seed) {
   };
 }
 
-const RECURRING = [
-  ["Aluguel", "Moradia", 1450, 1450, [6]], ["Conta de luz", "Moradia", 140, 230, [12]],
-  ["Internet", "Tecnologia", 99.9, 99.9, [10]], ["Supermercado", "Alimentação", 180, 340, [3, 14, 24]],
+const MONTHLY = [
+  ["Conta de luz", "Moradia", 140, 230, [12]], ["Supermercado", "Alimentação", 180, 340, [3, 14, 24]],
   ["Padaria", "Alimentação", 18, 45, [2, 9, 17, 27]], ["Uber", "Transporte", 18, 46, [4, 11, 15, 22]],
   ["Combustível", "Transporte", 150, 220, [8, 23]], ["Farmácia", "Saúde", 35, 120, [19]],
   ["Cinema", "Lazer", 40, 80, [13]], ["Restaurante", "Lazer", 60, 150, [20, 28]],
-  ["Curso online", "Educação", 89.9, 89.9, [15]], ["Fatura do cartão", "Cartão", 250, 520, [25]],
+  ["Fatura do cartão", "Cartão", 250, 520, [25]],
+];
+// Guardados uma vez só e repetidos todo mês (lançamentos fixos).
+const FIXED = [
+  ["Salário", "Trabalho", 6500, INCOME, 5], ["Aluguel", "Moradia", 1450, EXPENSE, 6],
+  ["Internet", "Tecnologia", 99.9, EXPENSE, 10], ["Curso online", "Educação", 89.9, EXPENSE, 15],
+  ["Academia", "Saúde", 119.9, EXPENSE, 8],
 ];
 export const DEMO_BUDGETS = { Moradia: 1700, Alimentação: 1000, Transporte: 400, Lazer: 300, Saúde: 200 };
 
 /** Um ano de movimentações de exemplo, para conhecer o app sem digitar nada. */
 export function demoTransactions(today = todayIso(), months = 12, seed = 7) {
   const rng = mulberry32(seed);
-  const items = [];
+  const firstMonth = addMonths(monthStart(today), -(months - 1));
+  const items = FIXED.map(([description, category, amount, kind, day]) => ({
+    description, category, kind, amount, date: addDays(firstMonth, day - 1), recurring: true, until: null,
+  }));
   for (let back = months - 1; back >= 0; back--) {
     const first = addMonths(monthStart(today), -back);
-    const salary = 5200 + (months - 1 - back) * 120;
-    const rows = [["Salário", "Trabalho", salary, salary, [5], INCOME]];
+    const rows = [];
     if (back % 3 === 0) rows.push(["Projeto freelance", "Trabalho", 450, 900, [18], INCOME]);
-    for (const r of RECURRING) rows.push([...r, EXPENSE]);
+    for (const r of MONTHLY) rows.push([...r, EXPENSE]);
     for (const [description, category, low, high, days, kind] of rows) {
       for (const d of days) {
         const date = addDays(first, d - 1);
         if (date > today || date.slice(0, 7) !== first.slice(0, 7)) continue;
-        items.push({ description, category, kind, date, amount: low === high ? low : round2(low + rng() * (high - low)) });
+        items.push({ description, category, kind, date, amount: low === high ? low : round2(low + rng() * (high - low)), recurring: false, until: null });
       }
     }
   }

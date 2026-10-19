@@ -98,13 +98,18 @@ Na pasta [`mobile/`](mobile) há uma versão do Titanium para celular, feita com
 
 Recursos: botão **+** para lançar em segundos (data nativa do celular, categoria padrão por tipo e repetição do tipo e da categoria pela descrição), gráfico de barras com toque no mês, rosca de gastos por categoria, orçamentos com alertas, busca e filtros, tema claro/escuro/sistema e exportação em **CSV** e backup **JSON**.
 
-> Os dados ficam **só no aparelho** (armazenamento do navegador) e nunca são enviados a nenhum servidor. O CSV do celular e o do computador têm o mesmo formato: use *Exportar* em um e *Importar* no outro para levar seus lançamentos de um lado para o outro.
+**Fixo todo mês ou só este mês.** Ao lançar uma despesa ou receita, escolha entre *Só este mês* e *↻ Fixo todo mês*. O lançamento fixo é cadastrado uma vez só e se repete sozinho todo mês, no mesmo dia (no último dia do mês, quando o mês é mais curto), até o mês de término que você escolher (opcional). Editar ou excluir um fixo vale para todos os meses.
+
+**Aba Meses (mês a mês).** Mostra, mês por mês, as receitas, as despesas e o saldo previstos, separando **despesas fixas**, **despesas avulsas** e **receitas**, e quanto da renda do mês as despesas fixas comprometem. O seletor de meses é calculado a partir da data de hoje: hoje mostra *Set, Out, Nov, Dez* e, na sequência, *Jan/27, Fev/27…* (vira o ano sozinho, sempre com os próximos 12 meses). O painel também traz um cartão com a previsão do próximo mês.
+
+> Os dados ficam **só no aparelho** (armazenamento do navegador) e nunca são enviados a nenhum servidor. O CSV do celular e o do computador têm o mesmo formato (o do celular ganhou as colunas opcionais `Recorrência` e `Até`): use *Exportar* em um e *Importar* no outro para levar seus lançamentos de um lado para o outro.
 
 Para testar no computador (ou conhecer com dados de exemplo, sem salvar nada):
 
 ```bash
 python -m http.server 8000 --directory mobile
 # abra http://localhost:8000  ou  http://localhost:8000/?demo
+# (no modo demo: &page=Meses  &month=2026-11-01  &theme=dark  &sheet&fixo)
 ```
 
 Testes do núcleo JavaScript (precisa do Node 18+; também rodam abrindo `mobile/tests.html` no navegador):

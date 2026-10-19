@@ -2,15 +2,16 @@
 
 import {
   CATEGORIES, DEFAULT_CATEGORY, DEMO_BUDGETS, EXPENSE, INCOME, PERIODS, ValidationError,
-  addDays, budgetStatuses, comparisonLabel, demoTransactions, describePeriod, exportCsv, filterTransactions,
-  formatBrl, formatCompact, formatDate, importCsv, makeTransaction, monthName, monthlySeries, monthStart,
-  parseAmount, percentChange, periodRange, previousPeriod, signed, sortRecent, summarize, todayIso, topCategories,
+  addDays, addMonths, budgetStatuses, comparisonLabel, demoTransactions, describeMonth, describePeriod, exportCsv,
+  filterTransactions, formatBrl, formatCompact, formatDate, importCsv, makeTransaction, monthLabel, monthName,
+  monthOverview, monthlySeries, monthStart, parseAmount, percentChange, periodRange, previousPeriod, signed,
+  sortRecent, summarize, todayIso, topCategories, transactionsIn, upcomingMonths,
 } from "./core.js";
 import { defaults, load, save } from "./store.js";
 
-const VERSION = "2.0.0";
-const PAGES = ["Painel", "Movimentações", "Orçamentos", "Mais"];
-const TITLES = { Painel: "Visão geral", Movimentações: "Lançamentos", Orçamentos: "Orçamentos", Mais: "Mais" };
+const VERSION = "2.1.0";
+const PAGES = ["Painel", "Meses", "Movimentações", "Orçamentos", "Mais"];
+const TITLES = { Painel: "Visão geral", Meses: "Mês a mês", Movimentações: "Lançamentos", Orçamentos: "Orçamentos", Mais: "Mais" };
 const THEMES = [["system", "Sistema"], ["light", "Claro"], ["dark", "Escuro"]];
 const KIND_FILTERS = [["Todos", null], ["Receitas", INCOME], ["Despesas", EXPENSE]];
 
@@ -18,12 +19,12 @@ const $ = (selector) => document.querySelector(selector);
 const esc = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 // ?demo abre o app com dados de exemplo só na memória (nada é salvo): bom para conhecer ou tirar prints.
-// Também aceita &page=Orçamentos, &theme=dark|light, &scroll=700 e &sheet (abre o formulário).
+// Também aceita &page=Meses, &month=2026-11-01, &theme=dark|light, &scroll=700 e &sheet[&fixo] (abre o formulário).
 const params = new URLSearchParams(location.search);
 const DEMO = params.has("demo");
 
 let state = load();
-const ui = { page: "Painel", kind: "Todos", category: "", text: "", month: null, warnedStorage: false, installEvent: null };
+const ui = { page: "Painel", kind: "Todos", category: "", text: "", month: null, monthSel: null, warnedStorage: false, installEvent: null };
 
 if (DEMO) {
   state = defaults();
@@ -31,6 +32,7 @@ if (DEMO) {
   state.budgets = { ...DEMO_BUDGETS };
   state.settings.theme = ["light", "dark"].includes(params.get("theme")) ? params.get("theme") : "system";
   if (PAGES.includes(params.get("page"))) ui.page = params.get("page");
+  if (/^\d{4}-\d{2}-01$/.test(params.get("month") ?? "")) ui.monthSel = params.get("month");
 }
 
 // ------------------------------------------------------------------ estado
@@ -44,7 +46,7 @@ function persist() {
 }
 
 const period = () => periodRange(state.settings.period);
-const monthItems = () => filterTransactions(state.transactions, { period: periodRange("Mês") });
+const monthItems = () => transactionsIn(state.transactions, periodRange("Mês"));
 const allCategories = () => [...new Set([...CATEGORIES, ...state.transactions.map((t) => t.category)])].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
 function addTransactions(items) {
@@ -128,11 +130,12 @@ function deltaText(now, then, versus, lowerIsBetter = false) {
   return { text: `${short} ${versus}`, short, cls: good ? "good" : "bad" };
 }
 
-function transactionRow(t) {
-  const income = t.kind === INCOME;
-  return `<button class="item" type="button" data-edit="${t.id}">
+function transactionRow(t, today = todayIso(), { tagFuture = true } = {}) {
+  const income = t.kind === INCOME, future = t.date > today;
+  const tags = [t.recurring ? "↻ Fixa" : "", future && tagFuture ? "previsto" : ""].filter(Boolean).map((x) => ` <span class="tag">${x}</span>`).join("");
+  return `<button class="item${future ? " proj" : ""}" type="button" data-edit="${t.id}">
     <span class="ico ${income ? "in" : ""}" aria-hidden="true">${income ? "$" : esc(t.category.charAt(0).toUpperCase())}</span>
-    <span class="txt"><b>${esc(t.description)}</b><small>${esc(t.category)} · ${formatDate(t.date, { short: true })}</small></span>
+    <span class="txt"><b>${esc(t.description)}</b><small>${esc(t.category)} · ${formatDate(t.date, { short: true })}${tags}</small></span>
     <span class="val ${income ? "in" : "out"}">${formatBrl(signed(t), { signed: true })}</span>
   </button>`;
 }
@@ -153,8 +156,8 @@ function renderDashboard() {
       <button class="btn" data-action="demo">Carregar dados de exemplo</button></div></section>`;
   }
 
-  const p = period(), items = filterTransactions(state.transactions, { period: p }), s = summarize(items);
-  const before = previousPeriod(p), prev = before ? summarize(filterTransactions(state.transactions, { period: before })) : null;
+  const p = period(), items = transactionsIn(state.transactions, p), s = summarize(items);
+  const before = previousPeriod(p), prev = before ? summarize(transactionsIn(state.transactions, before)) : null;
   const versus = comparisonLabel(p);
   const dBal = deltaText(s.balance, prev && prev.balance, versus), dInc = deltaText(s.income, prev && prev.income, versus), dExp = deltaText(s.expense, prev && prev.expense, versus, true);
 
@@ -188,6 +191,7 @@ function renderDashboard() {
       <div class="delta">${rate === null ? "sem receitas no período" : rate >= 0 ? "da renda guardada" : "gastou mais do que ganhou"}</div>
       <div class="meter" aria-hidden="true"><i style="width:${rate === null ? 0 : Math.max(0, Math.min(rate, 1)) * 100}%"></i></div>
     </section>
+    ${nextMonthCard()}
     <section class="card">
       <div class="card-head"><div><h2>Receitas x despesas</h2><p class="sub">Últimos ${months} meses · toque numa barra</p></div></div>
       ${flowChart(series, selected)}
@@ -201,12 +205,26 @@ function renderDashboard() {
     </section>
     <section class="card">
       <div class="card-head"><h2>Movimentações recentes</h2><button class="link" data-page="Movimentações">Ver todas →</button></div>
-      ${recent.length ? `<div class="list">${recent.map(transactionRow).join("")}</div>` : `<p class="empty">Nenhuma movimentação neste período.</p>`}
+      ${recent.length ? `<div class="list">${recent.map((t) => transactionRow(t)).join("")}</div>` : `<p class="empty">Nenhuma movimentação neste período.</p>`}
     </section>
     <section class="card">
       <div class="card-head"><h2>Orçamentos do mês</h2><button class="link" data-page="Orçamentos">Editar</button></div>
       ${budgets.length ? budgets.map(budgetBar).join("") : `<p class="empty">Defina limites mensais por categoria para acompanhar seus gastos.</p>`}
     </section>`;
+}
+
+/** Previsão do mês que vem, só se houver lançamentos fixos cadastrados. */
+function nextMonthCard() {
+  if (!state.transactions.some((t) => t.recurring)) return "";
+  const next = addMonths(monthStart(todayIso()), 1), o = monthOverview(state.transactions, next);
+  return `<section class="card">
+    <div class="card-head"><div><h2>Próximo mês · ${esc(describeMonth(next).split(" de ")[0])}</h2><p class="sub">Previsão com seus lançamentos fixos</p></div>
+      <button class="link" type="button" data-msel="${next}">Detalhar →</button></div>
+    <div class="trio">
+      <div><span class="label">Receitas</span><b class="in">${formatBrl(o.income, { cents: false })}</b></div>
+      <div><span class="label">Despesas</span><b class="out">${formatBrl(o.expense, { cents: false })}</b></div>
+      <div><span class="label">Saldo</span><b class="${o.balance < 0 ? "out" : ""}">${formatBrl(o.balance, { cents: false })}</b></div>
+    </div></section>`;
 }
 
 function caption(m) {
@@ -240,7 +258,7 @@ function dayLabel(iso, today) {
 
 function updateList() {
   const kind = KIND_FILTERS.find(([label]) => label === ui.kind)[1];
-  const rows = sortRecent(filterTransactions(state.transactions, { period: period(), kind, category: ui.category || null, text: ui.text }));
+  const rows = sortRecent(filterTransactions(transactionsIn(state.transactions, period()), { kind, category: ui.category || null, text: ui.text }));
   const today = todayIso();
   let html = "", last = "";
   for (const t of rows) {
@@ -251,6 +269,51 @@ function updateList() {
   $("#list").innerHTML = rows.length ? html + "</div>" : `<section class="card empty"><p>${filtered ? "Nada encontrado com esses filtros." : "Nenhuma movimentação neste período."}</p>${filtered ? "" : `<button class="btn primary" data-action="new">Adicionar movimentação</button>`}</section>`;
   const s = summarize(rows);
   $("#summary").innerHTML = rows.length ? `${s.count} ${s.count === 1 ? "movimentação" : "movimentações"} · Saldo ${formatBrl(s.balance)}<br>Receitas ${formatBrl(s.income)} · Despesas ${formatBrl(s.expense)}` : "";
+}
+
+// ------------------------------------------------------------------ mês a mês
+
+function renderMonths() {
+  const today = todayIso(), current = monthStart(today), months = upcomingMonths(today, 1, 12);
+  if (!months.includes(ui.monthSel)) ui.monthSel = current;
+  const m = ui.monthSel, o = monthOverview(state.transactions, m, today);
+  const status = { futuro: "Previsto", atual: "Em andamento", passado: "Encerrado" }[o.status];
+
+  const strip = months.map((iso) => {
+    const newYear = iso.slice(5, 7) === "01" && iso !== months[0];
+    return `<button type="button" class="mchip${iso === current ? " now" : ""}${newYear ? " year" : ""}" data-msel="${iso}" aria-pressed="${iso === m}" aria-label="${esc(describeMonth(iso))}">${monthLabel(iso, today)}</button>`;
+  }).join("");
+
+  const fixedExpenses = o.items.filter((t) => t.kind === EXPENSE && t.recurring);
+  const oneOffExpenses = o.items.filter((t) => t.kind === EXPENSE && !t.recurring);
+  const incomes = o.items.filter((t) => t.kind === INCOME);
+  const group = (title, total, rows, cls) => rows.length
+    ? `<section class="card"><div class="card-head"><h2>${title}</h2><b class="${cls}">${formatBrl(total)}</b></div><div class="list">${rows.map((t) => transactionRow(t, today, { tagFuture: o.status !== "futuro" })).join("")}</div></section>` : "";
+  const incomeTotal = o.income;
+  const level = o.commitment === null ? "" : o.commitment > 1 ? "estourado" : o.commitment >= 0.7 ? "alerta" : "";
+
+  return `
+    <div class="month-strip" id="strip" role="group" aria-label="Escolha o mês">${strip}</div>
+    <section class="card">
+      <div class="card-head"><div><h2>${esc(describeMonth(m))}</h2><p class="sub">${o.status === "futuro" ? "Só o que já está cadastrado" : o.status === "atual" ? "Realizado e previsto até o fim do mês" : "Tudo o que caiu no mês"}</p></div><span class="pill ${o.status}">${status}</span></div>
+      <div class="trio">
+        <div><span class="label">Receitas</span><b class="in">${formatBrl(o.income, { cents: false })}</b></div>
+        <div><span class="label">Despesas</span><b class="out">${formatBrl(o.expense, { cents: false })}</b></div>
+        <div><span class="label">Saldo</span><b class="${o.balance < 0 ? "out" : ""}">${formatBrl(o.balance, { cents: false })}</b></div>
+      </div>
+      ${o.commitment === null ? "" : `<p class="commit">Despesas fixas: <b>${formatBrl(o.fixedExpense, { cents: false })}</b> · ${Math.round(o.commitment * 100)}% da receita do mês</p>
+        <div class="meter" aria-hidden="true"><i class="${level}" style="width:${Math.min(o.commitment, 1) * 100}%"></i></div>`}
+    </section>
+    ${group("Despesas fixas", o.fixedExpense, fixedExpenses, "out")}
+    ${group("Despesas avulsas", o.oneOffExpense, oneOffExpenses, "out")}
+    ${group("Receitas", incomeTotal, incomes, "in")}
+    ${o.items.length ? "" : `<section class="card empty"><p>Nada lançado em ${esc(describeMonth(m).toLowerCase())}.</p><p class="hint">Cadastre uma despesa ou receita como <b>Fixo todo mês</b> e ela já aparece em todos os meses seguintes.</p></section>`}
+    <div class="menu"><button class="btn primary" type="button" data-action="new">+ Lançar em ${esc(monthName(m))}</button></div>`;
+}
+
+function centerSelectedMonth() {
+  const strip = $("#strip"), selected = strip?.querySelector('[aria-pressed="true"]');
+  if (strip && selected) strip.scrollLeft = selected.offsetLeft - (strip.clientWidth - selected.offsetWidth) / 2;
 }
 
 // --------------------------------------------------------------- orçamentos
@@ -337,7 +400,7 @@ async function shareOrDownload(filename, text, type) {
   toast(`${filename} salvo.`);
 }
 
-const keyOf = (t) => [t.date, t.description.toLocaleLowerCase("pt-BR"), t.amount, t.kind, t.category.toLocaleLowerCase("pt-BR")].join("|");
+const keyOf = (t) => [t.date, t.description.toLocaleLowerCase("pt-BR"), t.amount, t.kind, t.category.toLocaleLowerCase("pt-BR"), t.recurring ? "fixo" : ""].join("|");
 
 function mergeImported(items) {
   const known = new Set(state.transactions.map(keyOf));
@@ -354,7 +417,7 @@ async function importFile(file) {
       if (!data || !Array.isArray(data.transactions)) throw new Error("formato");
       const valid = [];
       for (const raw of data.transactions) {
-        try { valid.push(makeTransaction({ description: raw.description, amount: raw.amount, kind: raw.kind, category: raw.category, when: raw.date })); } catch { /* ignora a linha */ }
+        try { valid.push(makeTransaction({ description: raw.description, amount: raw.amount, kind: raw.kind, category: raw.category, when: raw.date, recurring: raw.recurring === true, until: raw.until ?? "" })); } catch { /* ignora a linha */ }
       }
       const added = mergeImported(valid);
       for (const [c, v] of Object.entries(data.budgets ?? {})) if (typeof v === "number" && v > 0) state.budgets[c] = v;
@@ -390,14 +453,37 @@ function fillCategories(selected) {
   $("#f-new-wrap").hidden = true;
 }
 
-function openSheet(id = null) {
+/** Data dentro do mês escolhido: hoje, se for o mês atual; senão o mesmo dia de hoje (ou o último dia do mês). */
+function dateInMonth(monthIso) {
+  const today = todayIso();
+  if (monthStart(today) === monthIso) return today;
+  const last = Number(addDays(addMonths(monthIso, 1), -1).slice(8));
+  return `${monthIso.slice(0, 8)}${String(Math.min(Number(today.slice(8)), last)).padStart(2, "0")}`;
+}
+
+/** Explica ao usuário o que "Só este mês" e "Fixo todo mês" significam para a data escolhida. */
+function syncFrequency() {
+  const monthly = form.elements.freq.value === "monthly";
+  const date = $("#f-date").value || todayIso();
+  $("#f-until-wrap").hidden = !monthly;
+  $("#f-date-label").textContent = monthly ? "Começa em" : "Data";
+  const until = $("#f-until").value;
+  $("#freq-hint").textContent = monthly
+    ? `Repete todo mês no dia ${Number(date.slice(8))}, a partir de ${describeMonth(monthStart(date)).toLowerCase()}${until ? ` até ${describeMonth(`${until}-01`).toLowerCase()}` : ", até você encerrar"}.${editing ? " Mudanças valem para todos os meses." : ""}`
+    : `Vale só para ${describeMonth(monthStart(date)).toLowerCase()}.`;
+}
+
+function openSheet(id = null, { month = null } = {}) {
   editing = id === null ? null : state.transactions.find((t) => t.id === id) ?? null;
   const kind = editing ? editing.kind : state.settings.lastKind;
-  $("#sheet-title").textContent = editing ? "Editar movimentação" : "Nova movimentação";
+  $("#sheet-title").textContent = editing ? (editing.recurring ? "Editar lançamento fixo" : "Editar movimentação") : "Nova movimentação";
   form.elements.kind.value = kind;
+  form.elements.freq.value = editing?.recurring ? "monthly" : "once";
+  $("#f-until").value = editing?.until ?? "";
   $("#f-description").value = editing ? editing.description : "";
   $("#f-amount").value = editing ? editing.amount.toFixed(2).replace(".", ",") : "";
-  $("#f-date").value = editing ? editing.date : todayIso();
+  $("#f-date").value = editing ? editing.date : month ? dateInMonth(month) : todayIso();
+  syncFrequency();
   fillCategories(editing ? editing.category : kind === state.settings.lastKind ? state.settings.lastCategory : DEFAULT_CATEGORY[kind]);
   $("#f-new").value = "";
   $("#sheet-error").textContent = "";
@@ -412,14 +498,15 @@ form.addEventListener("submit", (event) => {
   try {
     const t = makeTransaction({
       description: $("#f-description").value, amount: $("#f-amount").value, kind: form.elements.kind.value,
-      category, when: $("#f-date").value,
+      category, when: $("#f-date").value, recurring: form.elements.freq.value === "monthly", until: $("#f-until").value,
     });
+    const wasEditing = Boolean(editing);
     if (editing) Object.assign(editing, t); else addTransactions([t]);
     state.settings.lastKind = t.kind;
     state.settings.lastCategory = t.category;
     persist();
     sheet.close();
-    toast(editing ? "Movimentação atualizada." : `Adicionada: ${formatBrl(signed(t), { signed: true })}.`);
+    toast(wasEditing ? "Movimentação atualizada." : `Adicionada${t.recurring ? " (fixa todo mês)" : ""}: ${formatBrl(signed(t), { signed: true })}.`);
     render({ keepScroll: true });
   } catch (error) {
     if (!(error instanceof ValidationError)) throw error;
@@ -431,6 +518,10 @@ form.addEventListener("submit", (event) => {
 form.querySelectorAll('input[name="kind"]').forEach((radio) => radio.addEventListener("change", () => {
   if (!editing && !$("#f-description").value) fillCategories(DEFAULT_CATEGORY[form.elements.kind.value]);
 }));
+
+form.querySelectorAll('input[name="freq"]').forEach((radio) => radio.addEventListener("change", syncFrequency));
+$("#f-date").addEventListener("change", syncFrequency);
+$("#f-until").addEventListener("change", syncFrequency);
 
 $("#f-category").addEventListener("change", (e) => {
   $("#f-new-wrap").hidden = e.target.value !== "__new__";
@@ -448,7 +539,9 @@ $("#f-description").addEventListener("blur", () => {
 $("#f-cancel").addEventListener("click", () => sheet.close());
 sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.close(); });
 $("#f-delete").addEventListener("click", () => {
-  if (!editing || !confirm(`Excluir “${editing.description}” (${formatBrl(signed(editing), { signed: true })}, ${formatDate(editing.date)})?\n\nEssa ação não pode ser desfeita.`)) return;
+  const what = editing?.recurring ? `Excluir o lançamento fixo “${editing.description}” (${formatBrl(signed(editing), { signed: true })} todo mês)?\n\nEle some de todos os meses, inclusive dos passados.`
+    : editing ? `Excluir “${editing.description}” (${formatBrl(signed(editing), { signed: true })}, ${formatDate(editing.date)})?\n\nEssa ação não pode ser desfeita.` : "";
+  if (!editing || !confirm(what)) return;
   state.transactions = state.transactions.filter((t) => t.id !== editing.id);
   persist();
   sheet.close();
@@ -467,6 +560,7 @@ function render({ keepScroll = false } = {}) {
   const today = todayIso();
   $("#subtitle").textContent = {
     Painel: `${describePeriod(period())} · seus números em um só lugar`,
+    Meses: "Despesas e receitas, mês a mês",
     Movimentações: `${describePeriod(period())} · toque para editar`,
     Orçamentos: `Limites mensais · ${monthName(today)} de ${today.slice(0, 4)}`,
     Mais: "Ajustes, dados e instalação",
@@ -477,13 +571,19 @@ function render({ keepScroll = false } = {}) {
   seg.hidden = !showPeriod;
   seg.innerHTML = PERIODS.map((p) => `<button type="button" data-period="${p}" aria-pressed="${state.settings.period === p}">${p}</button>`).join("");
 
-  $("#view").innerHTML = { Painel: renderDashboard, Movimentações: renderTransactions, Orçamentos: renderBudgets, Mais: renderMore }[ui.page]();
+  $("#view").innerHTML = { Painel: renderDashboard, Meses: renderMonths, Movimentações: renderTransactions, Orçamentos: renderBudgets, Mais: renderMore }[ui.page]();
   if (ui.page === "Movimentações") updateList();
+  if (ui.page === "Meses") centerSelectedMonth();
   document.querySelectorAll("#tabs button").forEach((b) => {
     if (b.dataset.page === ui.page) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   });
   $("#fab").hidden = ui.page === "Mais";
   window.scrollTo(0, keepScroll ? y : 0);
+}
+
+/** Na aba "Meses", o novo lançamento já nasce dentro do mês que está aberto. */
+function newTransaction() {
+  openSheet(null, ui.page === "Meses" ? { month: ui.monthSel } : {});
 }
 
 function go(page) {
@@ -495,13 +595,14 @@ document.addEventListener("click", async (event) => {
   const el = event.target.closest("button, [data-month], [data-edit]");
   if (!el) return;
   const d = el.dataset;
+  if (d.msel) { ui.monthSel = d.msel; return ui.page === "Meses" ? render({ keepScroll: true }) : go("Meses"); }
   if (d.page) return go(d.page);
   if (d.period) { state.settings.period = d.period; persist(); return render({ keepScroll: true }); }
   if (d.edit) return openSheet(Number(d.edit));
   if (d.kind) { ui.kind = d.kind; $("#kinds").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.kind === ui.kind)); return updateList(); }
   if (d.theme) { state.settings.theme = d.theme; persist(); applyTheme(); return render({ keepScroll: true }); }
   switch (d.action) {
-    case "new": return openSheet();
+    case "new": return newTransaction();
     case "demo":
       if (state.transactions.length && !confirm("Adicionar dados de exemplo aos que você já tem?")) return;
       addTransactions(demoTransactions());
@@ -540,7 +641,7 @@ document.addEventListener("change", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target.dataset?.budget !== undefined) event.target.blur();
 });
-$("#fab").addEventListener("click", () => openSheet());
+$("#fab").addEventListener("click", () => newTransaction());
 $("#tabs").addEventListener("click", (event) => { const b = event.target.closest("button"); if (b) go(b.dataset.page); });
 $("#file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
@@ -556,7 +657,18 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !s
 
 applyTheme();
 render();
-if (DEMO && params.has("sheet")) { openSheet(); sheet.style.animation = "none"; }
+if (DEMO && params.has("sheet")) {
+  newTransaction();
+  if (params.has("fixo")) {
+    form.elements.freq.value = "monthly";
+    $("#f-description").value = "Academia";
+    $("#f-amount").value = "119,90";
+    $("#f-category").value = "Saúde";
+    $("#f-until").value = "2027-06";
+    syncFrequency();
+  }
+  sheet.style.animation = "none";
+}
 if (DEMO && params.has("scroll")) window.scrollTo(0, Number(params.get("scroll")) || 0);
 if (!DEMO) navigator.storage?.persist?.();
 

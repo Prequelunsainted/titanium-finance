@@ -29,6 +29,9 @@ export function sanitize(data) {
 
   state.transactions = (Array.isArray(data.transactions) ? data.transactions : []).filter(validTransaction).map((t) => ({
     id: t.id, description: t.description, amount: t.amount, kind: t.kind, category: t.category, date: t.date,
+    // Dados salvos antes dos lançamentos fixos não têm esses campos: viram avulsos.
+    recurring: t.recurring === true,
+    until: t.recurring === true && typeof t.until === "string" && /^\d{4}-\d{2}$/.test(t.until) ? t.until : null,
   }));
   const maxId = state.transactions.reduce((m, t) => Math.max(m, t.id), 0);
   state.nextId = Math.max(Number.isInteger(data.nextId) ? data.nextId : 1, maxId + 1);
