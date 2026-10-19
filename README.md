@@ -102,14 +102,35 @@ Recursos: botão **+** para lançar em segundos (data nativa do celular, categor
 
 **Aba Meses (mês a mês).** Mostra, mês por mês, as receitas, as despesas e o saldo previstos, separando **despesas fixas**, **despesas avulsas** e **receitas**, e quanto da renda do mês as despesas fixas comprometem. O seletor de meses é calculado a partir da data de hoje: hoje mostra *Set, Out, Nov, Dez* e, na sequência, *Jan/27, Fev/27…* (vira o ano sozinho, sempre com os próximos 12 meses). O painel também traz um cartão com a previsão do próximo mês.
 
-> Os dados ficam **só no aparelho** (armazenamento do navegador) e nunca são enviados a nenhum servidor. O CSV do celular e o do computador têm o mesmo formato (o do celular ganhou as colunas opcionais `Recorrência` e `Até`): use *Exportar* em um e *Importar* no outro para levar seus lançamentos de um lado para o outro.
+**Financiamentos e parcelamentos.** Cadastre um carro, uma moto, um empréstimo ou uma compra parcelada: o app calcula a tabela de parcelas, os juros e o saldo devedor. Escolha o sistema (**Sem juros**, **Price** com parcela fixa ou **SAC** com parcela decrescente), informe os juros ao mês ou ao ano, e veja uma simulação ao vivo, já comparando Price x SAC. As parcelas entram sozinhas em cada mês (aba Meses), no painel e nos gráficos; dá para ver quanto já foi pago, o que falta e o custo total.
+
+**Nome do tipo e subcategoria.** Cada lançamento pode ter um *nome do tipo* (Pix, boleto, cartão, dinheiro ou os seus: "Vale-refeição", "Pix Itaú"…) e uma *subcategoria* (Alimentação › Mercado). Dá para buscar, filtrar e ver a rosca do painel por subcategoria. Ao editar, marque *aplicar a todos os lançamentos com esta descrição* para corrigir de uma vez.
+
+**Limite do cartão.** Cadastre seus cartões (limite, dia do fechamento e do vencimento). Ao lançar uma compra, escolha o nome do cartão em *Nome do tipo*: o limite disponível da fatura aberta é calculado sozinho.
+
+**Painel que você monta.** Em *Personalizar painel* escolha quais blocos aparecem e a ordem deles: dá para esconder o gráfico de despesas e deixar só o saldo e o limite do cartão, por exemplo. *Restaurar padrão* volta ao original, e blocos novos de versões futuras entram sozinhos no lugar certo.
+
+![Painel personalizado, financiamentos e lançamentos](docs/mobile.png)
+
+**Perfil e bloqueio.** Defina seu nome e a cor do avatar (a saudação aparece no painel). Em *Segurança e bloqueio* ative o desbloqueio com a **senha, digital ou rosto do celular** (usa o próprio sistema do Android/iPhone via WebAuthn: o app nunca vê nem guarda essa senha; precisa abrir o app pelo endereço https) e/ou um **PIN do app**. O app bloqueia ao abrir e ao voltar depois do prazo que você escolher, e espera mais a cada erro de PIN. É uma trava contra quem pega o celular desbloqueado: os dados continuam sem criptografia no navegador, então o que realmente protege é a tela de bloqueio do celular e o seu backup.
+
+![Personalizar painel, segurança e tela de bloqueio](docs/mobile-ajustes.png)
+
+**Feito para não perder nem errar números** (lições de avaliações de apps parecidos na Play Store):
+- **Saldo do dia que bate.** Na lista, cada dia mostra a conta *saldo anterior + lançamentos do dia = saldo do dia*. O saldo é sempre calculado na hora, nunca guardado, então corrigir um lançamento antigo acerta tudo sozinho. Informe o *saldo inicial* para bater com o do seu banco.
+- **Mensagem do banco vira lançamento.** Cole o texto de uma notificação (ou, com o app instalado, use *Compartilhar* → Titanium): *Pix recebido* vira **receita**, *Pix enviado* vira **despesa**, e se o app não tiver certeza ele pergunta em vez de chutar.
+- **Desfazer** depois de excluir ou editar vários lançamentos, **lembrete de backup** a cada 30 dias e backup/importação sem duplicar.
+- **Grátis de verdade:** sem limite de lançamentos, sem anúncios, sem conta e sem assinatura.
+
+> Os dados ficam **só no aparelho** (armazenamento do navegador) e nunca são enviados a nenhum servidor. O CSV do celular e o do computador têm o mesmo formato (o do celular ganhou as colunas opcionais `Recorrência`, `Até`, `Subcategoria` e `Nome do tipo`): use *Exportar* em um e *Importar* no outro para levar seus lançamentos de um lado para o outro.
 
 Para testar no computador (ou conhecer com dados de exemplo, sem salvar nada):
 
 ```bash
 python -m http.server 8000 --directory mobile
 # abra http://localhost:8000  ou  http://localhost:8000/?demo
-# (no modo demo: &page=Meses  &month=2026-11-01  &theme=dark  &sheet&fixo)
+# (no modo demo: &page=Meses|Financiamentos  &month=2026-11-01  &theme=dark  &nome=Lucas  &sheet&fixo
+#  &panel=personalizar|seguranca|cartoes|tipos|perfil|financiamento  &dash=cartao  &lock)
 ```
 
 Testes do núcleo JavaScript (precisa do Node 18+; também rodam abrindo `mobile/tests.html` no navegador):

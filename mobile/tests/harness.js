@@ -1,13 +1,20 @@
 // Mini framework de testes que roda igual no Node (CI) e no navegador (tests.html).
+// Aceita testes síncronos e assíncronos (que devolvem uma Promise).
 
 const results = [];
+const pending = [];
 
 export function test(name, fn) {
+  const entry = { name, ok: true };
+  results.push(entry);
   try {
-    fn();
-    results.push({ name, ok: true });
+    const out = fn();
+    if (out && typeof out.then === "function") {
+      pending.push(out.catch((error) => { entry.ok = false; entry.error = error.message; }));
+    }
   } catch (error) {
-    results.push({ name, ok: false, error: error.message });
+    entry.ok = false;
+    entry.error = error.message;
   }
 }
 
@@ -26,8 +33,8 @@ export function deepEqual(actual, expected, message = "") {
   if (a !== e) throw new Error(`${message} esperado ${e}, veio ${a}`.trim());
 }
 
-export function close(actual, expected, message = "") {
-  if (Math.abs(actual - expected) > 1e-9) throw new Error(`${message} esperado ${expected}, veio ${actual}`.trim());
+export function close(actual, expected, message = "", tolerance = 1e-9) {
+  if (Math.abs(actual - expected) > tolerance) throw new Error(`${message} esperado ${expected}, veio ${actual}`.trim());
 }
 
 export function throws(fn, ErrorType) {
@@ -40,7 +47,8 @@ export function throws(fn, ErrorType) {
   throw new Error("deveria ter lançado um erro");
 }
 
-export function report() {
+export async function report() {
+  await Promise.all(pending);
   const failed = results.filter((r) => !r.ok);
   for (const r of results) console.log(`${r.ok ? "ok  " : "FAIL"} ${r.name}${r.ok ? "" : ` — ${r.error}`}`);
   console.log(`\n${results.length - failed.length}/${results.length} testes passaram`);

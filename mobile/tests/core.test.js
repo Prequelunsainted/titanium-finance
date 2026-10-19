@@ -4,7 +4,11 @@ import {
   expandRange, filterTransactions, formatBrl, formatCompact, formatDate, importCsv, makeTransaction, monthLabel,
   monthOverview, monthlySeries, occurrenceDate, parseAmount, parseDate, percentChange, periodRange,
   previousPeriod, sortRecent, summarize, topCategories, transactionsIn, upcomingMonths,
+  FINANCING_SYSTEMS, cardUsage, compareSystems, dailyBalances, financingSchedule, financingSummary,
+  makeFinancing, monthlyRate, parseBankText,
 } from "../core.js";
+import { PIN_RE, b64ToBytes, bytesToB64, hashPin, lockoutSeconds, verifyPin } from "../security.js";
+import { backupData, defaults, sanitize } from "../store.js";
 import { assert, close, deepEqual, equal, report, test, throws } from "./harness.js";
 
 const TODAY = "2026-10-16";
@@ -60,7 +64,7 @@ test("addMonths atravessa anos", () => {
 
 test("makeTransaction limpa e valida a entrada", () => {
   const t = makeTransaction({ description: "  Mercado   do  bairro ", amount: "1.500,5", kind: EXPENSE, category: " ", when: "14/10" }, TODAY);
-  deepEqual(t, { description: "Mercado do bairro", amount: 1500.5, kind: EXPENSE, category: "Outros", date: "2026-10-14", recurring: false, until: null });
+  deepEqual(t, { description: "Mercado do bairro", amount: 1500.5, kind: EXPENSE, category: "Outros", date: "2026-10-14", recurring: false, until: null, type: "", subcategory: "", plan: null });
   throws(() => makeTransaction({ description: "", amount: "10", kind: EXPENSE, category: "Lazer", when: "" }, TODAY), ValidationError);
   throws(() => makeTransaction({ description: "Algo", amount: "10", kind: "Transferência", category: "Lazer", when: "" }, TODAY), ValidationError);
   throws(() => makeTransaction({ description: "Algo", amount: "x", kind: EXPENSE, category: "Lazer", when: "" }, TODAY), ValidationError);
@@ -133,13 +137,13 @@ test("orçamentos: níveis e ordem", () => {
 test("CSV: exporta e reimporta o mesmo formato do app de computador", () => {
   const items = [tx("Café, com \"leite\"", 8.5, EXPENSE, "Alimentação", "2026-10-03"), tx("Salário", 5000, INCOME, "Trabalho", "2026-10-05")];
   const csv = exportCsv(items);
-  assert(csv.startsWith("\ufeffData;Descrição;Categoria;Tipo;Valor;Recorrência;Até\r\n"));
+  assert(csv.startsWith("\ufeffData;Descrição;Categoria;Tipo;Valor;Recorrência;Até;Subcategoria;Nome do tipo\r\n"));
   assert(csv.includes("03/10/2026;\"Café, com \"\"leite\"\"\";Alimentação;Despesa;-8,50;Avulso;"));
   const { items: back, skipped } = importCsv(csv, TODAY);
   equal(skipped, 0);
   deepEqual(back, [
-    { description: "Café, com \"leite\"", amount: 8.5, kind: EXPENSE, category: "Alimentação", date: "2026-10-03", recurring: false, until: null },
-    { description: "Salário", amount: 5000, kind: INCOME, category: "Trabalho", date: "2026-10-05", recurring: false, until: null },
+    { description: "Café, com \"leite\"", amount: 8.5, kind: EXPENSE, category: "Alimentação", date: "2026-10-03", recurring: false, until: null, type: "", subcategory: "", plan: null },
+    { description: "Salário", amount: 5000, kind: INCOME, category: "Trabalho", date: "2026-10-05", recurring: false, until: null, type: "", subcategory: "", plan: null },
   ]);
   const messy = importCsv("Data;Descrição;Categoria;Tipo;Valor\r\n03/10/2026;Ok;Lazer;Despesa;-10,00\r\nxx;Ruim;Lazer;Despesa;-5,00\r\n;;;;\r\n", TODAY);
   equal(messy.items.length, 1);
@@ -229,7 +233,7 @@ test("visão do mês: fixas, avulsas e comprometimento da renda", () => {
 
 test("fixo: validações do formulário", () => {
   const base = { description: "Academia", amount: "120", kind: EXPENSE, category: "Saúde", when: "10/10/2026" };
-  deepEqual(makeTransaction({ ...base, recurring: true, until: "2027-03" }, TODAY), { description: "Academia", amount: 120, kind: EXPENSE, category: "Saúde", date: "2026-10-10", recurring: true, until: "2027-03" });
+  deepEqual(makeTransaction({ ...base, recurring: true, until: "2027-03" }, TODAY), { description: "Academia", amount: 120, kind: EXPENSE, category: "Saúde", date: "2026-10-10", recurring: true, until: "2027-03", type: "", subcategory: "", plan: null });
   equal(makeTransaction({ ...base, recurring: false, until: "2027-03" }, TODAY).until, null, "avulso ignora o término");
   throws(() => makeTransaction({ ...base, recurring: true, until: "2026-09" }, TODAY), ValidationError);
   throws(() => makeTransaction({ ...base, recurring: true, until: "2027-13" }, TODAY), ValidationError);
@@ -251,4 +255,258 @@ test("CSV leva o lançamento fixo e o término de um lado para o outro", () => {
   equal(old.items[0].recurring, false);
 });
 
-export const outcome = report();
+
+// ---------------------------------------------------------- financiamentos
+
+const sumPayments = (rows) => Math.round(rows.reduce((a, r) => a + r.payment, 0) * 100) / 100;
+
+test("Price: parcela fixa, saldo zera e juros batem com a fórmula", () => {
+  const rows = financingSchedule({ system: "price", principal: 10000, rate: 1, count: 12 }, "2026-11-10");
+  equal(rows.length, 12);
+  equal(rows[0].payment, 888.49);
+  assert(rows.slice(0, 11).every((r) => r.payment === 888.49), "parcelas iguais");
+  equal(rows.at(-1).balance, 0);
+  close(rows[0].interest, 100, "juros do 1º mês", 0.005);
+  close(sumPayments(rows) - 10000, 661.86, "juros totais", 0.05);
+  equal(rows[11].date, "2027-10-10");
+  // Em toda linha: saldo anterior - amortização = saldo novo.
+  let balance = 10000;
+  for (const r of rows) { close(balance - r.amortization, r.balance, `linha ${r.n}`, 0.006); balance = r.balance; }
+});
+
+test("SAC: amortização constante e parcela que diminui", () => {
+  const rows = financingSchedule({ system: "sac", principal: 1000, rate: 2, count: 4 }, "2026-11-05");
+  deepEqual(rows.map((r) => r.payment), [270, 265, 260, 255]);
+  deepEqual(rows.map((r) => r.amortization), [250, 250, 250, 250]);
+  equal(sumPayments(rows), 1050);
+  equal(rows.at(-1).balance, 0);
+});
+
+test("Sem juros: divide igual e a última parcela fecha os centavos", () => {
+  const rows = financingSchedule({ system: "sem-juros", principal: 1000, rate: 0, count: 3 }, "2026-11-05");
+  deepEqual(rows.map((r) => r.payment), [333.33, 333.33, 333.34]);
+  equal(sumPayments(rows), 1000);
+});
+
+test("vencimento no dia 31 cai no último dia dos meses curtos", () => {
+  const rows = financingSchedule({ system: "sem-juros", principal: 400, rate: 0, count: 4 }, "2026-01-31");
+  deepEqual(rows.map((r) => r.date), ["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30"]);
+});
+
+test("taxa ao ano vira taxa ao mês e Price x SAC se comparam", () => {
+  close(monthlyRate(12.6825, "ano"), 1, "12,68% a.a. ≈ 1% a.m.", 0.001);
+  equal(monthlyRate(1.5, "mes"), 1.5);
+  const c = compareSystems(10000, 1, 12, "2026-11-10");
+  assert(c.sac.first > c.price.first && c.sac.last < c.price.last, "SAC começa mais alto e termina mais baixo");
+  assert(c.sac.interest < c.price.interest, "SAC paga menos juros no total");
+});
+
+test("makeFinancing valida e vira parcelas nos meses", () => {
+  const base = { description: "Moto", principal: "12.000", entry: "3.000", rate: "1,2", count: 36, system: "price", when: "20/08/2026", category: "Transporte" };
+  const f = makeFinancing(base, TODAY);
+  equal(f.kind, EXPENSE);
+  equal(f.plan.principal, 12000);
+  equal(f.plan.entry, 3000);
+  equal(f.plan.count, 36);
+  equal(f.amount, financingSchedule(f.plan, f.date)[0].payment);
+  throws(() => makeFinancing({ ...base, count: 0 }, TODAY), ValidationError);
+  throws(() => makeFinancing({ ...base, count: 600 }, TODAY), ValidationError);
+  throws(() => makeFinancing({ ...base, system: "x" }, TODAY), ValidationError);
+  throws(() => makeFinancing({ ...base, rate: "80" }, TODAY), ValidationError);
+  throws(() => makeFinancing({ ...base, description: "" }, TODAY), ValidationError);
+  equal(makeFinancing({ ...base, system: "sem-juros", rate: "" }, TODAY).plan.rate, 0);
+  const yearly = makeFinancing({ ...base, rate: "12,6825", rateUnit: "ano" }, TODAY);
+  close(yearly.plan.rate, 1, "convertida", 0.001);
+
+  const item = { id: 5, ...f };
+  const upTo = transactionsIn([item], periodRange("Tudo", TODAY), TODAY);
+  equal(upTo.length, 2, "só ago e set venceram até 16/10 (a de out vence dia 20)");
+  equal(transactionsIn([item], periodRange("Tudo", "2026-10-20"), "2026-10-20").length, 3, "no dia 20 a de outubro entra");
+});
+
+test("parcelas entram nas contas do mês e comprometem a renda", () => {
+  const f = { id: 7, ...makeFinancing({ description: "Carro", principal: 1200, rate: "", count: 12, system: "sem-juros", when: "2026-10-20", category: "Transporte" }, TODAY) };
+  const salary = { id: 8, description: "Salário", amount: 5000, kind: INCOME, category: "Trabalho", date: "2026-10-05", recurring: true, until: null };
+  const nov = monthOverview([f, salary], "2026-11-01", TODAY);
+  equal(nov.installmentExpense, 100);
+  equal(nov.committed, 100);
+  close(nov.commitment, 0.02);
+  const item = nov.items.find((t) => t.plan);
+  deepEqual([item.installment, item.installments], [2, 12]);
+  equal(monthOverview([f, salary], "2027-09-01", TODAY).installmentExpense, 100, "12ª e última parcela");
+  equal(monthOverview([f, salary], "2027-10-01", TODAY).installmentExpense, 0, "acabou");
+});
+
+test("resumo do financiamento: pago, a pagar e saldo devedor", () => {
+  const f = makeFinancing({ description: "Moto", principal: 1000, rate: "", count: 4, system: "sem-juros", when: "2026-08-20", category: "Transporte" }, TODAY);
+  const s = financingSummary(f, TODAY);
+  deepEqual([s.paidCount, s.remainingCount, s.paidTotal, s.remainingTotal, s.balance], [2, 2, 500, 500, 500]);
+  equal(s.next.date, "2026-10-20");
+  equal(s.done, false);
+  equal(financingSummary(f, "2027-01-01").done, true);
+  equal(financingSummary(f, "2026-01-01").balance, 1000);
+  assert(Object.keys(FINANCING_SYSTEMS).length === 3);
+});
+
+// ---------------------------------------------------------- saldo do dia
+
+test("saldo do dia: anterior + lançamentos do dia = saldo do dia, sempre", () => {
+  const items = [tx("A", 100, EXPENSE, "X", "2026-10-02", 1), tx("B", 30, EXPENSE, "X", "2026-10-02", 2),
+    { ...tx("S", 500, INCOME, "T", "2026-10-05", 3) }, tx("C", 20.1, EXPENSE, "X", "2026-10-09", 4)];
+  const days = dailyBalances(items, 1000);
+  deepEqual(days.map((d) => d.date), ["2026-10-02", "2026-10-05", "2026-10-09"]);
+  deepEqual(days.map((d) => d.before), [1000, 870, 1370]);
+  deepEqual(days.map((d) => d.change), [-130, 500, -20.1]);
+  deepEqual(days.map((d) => d.after), [870, 1370, 1349.9]);
+  days.forEach((d, i) => { close(d.before + d.change, d.after, `dia ${d.date}`, 1e-9); if (i) equal(d.before, days[i - 1].after); });
+  equal(dailyBalances([], 50).length, 0);
+});
+
+// ---------------------------------------------------------- cartão
+
+test("limite do cartão considera só a fatura aberta e o nome do tipo", () => {
+  const card = { name: "Cartão Nubank", limit: 1000, closingDay: 25, dueDay: 5 };
+  const on = (date, amount, type = "Cartão Nubank", extra = {}) => ({ ...tx("x", amount, EXPENSE, "Lazer", date, 1), type, ...extra });
+  const items = [on("2026-09-25", 999), on("2026-09-26", 200), on("2026-10-10", 300), on("2026-10-20", 100), on("2026-10-26", 50), on("2026-10-12", 80, "Pix")];
+  const u = cardUsage(card, items, TODAY);
+  equal(u.used, 600);
+  equal(u.available, 400);
+  equal(u.closing, "2026-10-25");
+  equal(u.daysToClosing, 9);
+  equal(u.due, "2026-11-05");
+  equal(u.level, "ok");
+  // Depois do fechamento a fatura aberta passa a ser a seguinte.
+  const after = cardUsage(card, items, "2026-10-26");
+  equal(after.closing, "2026-11-25");
+  equal(after.used, 50);
+  equal(cardUsage({ ...card, limit: 650 }, items, TODAY).level, "alerta");
+  equal(cardUsage({ ...card, limit: 500 }, items, TODAY).level, "estourado");
+});
+
+// ---------------------------------------------------------- tipo e subcategoria
+
+test("nome do tipo e subcategoria: guardados, filtrados e somados", () => {
+  const t = makeTransaction({ description: "Almoço", amount: "42", kind: EXPENSE, category: "Alimentação", when: "10/10", type: "  Pix   Itaú ", subcategory: "Restaurante" }, TODAY);
+  equal(t.type, "Pix Itaú");
+  equal(t.subcategory, "Restaurante");
+  const items = [{ id: 1, ...t }, { id: 2, ...t, subcategory: "Mercado", type: "Cartão", amount: 100 }, { id: 3, ...t, subcategory: "", amount: 8 }];
+  equal(filterTransactions(items, { type: "Pix Itaú" }).length, 2);
+  equal(filterTransactions(items, { text: "restau" }).length, 1, "busca acha subcategoria");
+  equal(filterTransactions(items, { text: "cartão" }).length, 1, "busca acha o nome do tipo");
+  const s = summarize(items);
+  deepEqual(s.byCategory, [["Alimentação", 150]]);
+  deepEqual(s.bySubcategory, [["Alimentação › Mercado", 100], ["Alimentação › Restaurante", 42], ["Alimentação", 8]]);
+});
+
+test("CSV leva subcategoria, nome do tipo e as parcelas já vencidas", () => {
+  const items = [{ id: 1, ...makeTransaction({ description: "Almoço", amount: "42", kind: EXPENSE, category: "Alimentação", when: "10/10/2026", type: "Pix", subcategory: "Restaurante" }, TODAY) },
+    { id: 2, ...makeFinancing({ description: "Moto", principal: 600, rate: "", count: 3, system: "sem-juros", when: "2026-09-20", category: "Transporte" }, TODAY) }];
+  const csv = exportCsv(items, TODAY);
+  assert(csv.includes("10/10/2026;Almoço;Alimentação;Despesa;-42,00;Avulso;;Restaurante;Pix"));
+  assert(csv.includes("20/09/2026;Moto (1/3);Transporte;Despesa;-200,00;Avulso;;;"));
+  assert(csv.includes("20/10/2026") === false, "parcela de outubro ainda não venceu em 16/10");
+  const back = importCsv(csv, TODAY).items;
+  deepEqual([back[0].type, back[0].subcategory], ["Pix", "Restaurante"]);
+});
+
+// ---------------------------------------------------------- texto do banco
+
+test("notificação do banco: Pix recebido é receita, enviado é despesa", () => {
+  const a = parseBankText("Você recebeu um Pix de Ana Souza no valor de R$ 1.150,50", TODAY);
+  deepEqual([a.amount, a.kind, a.type, a.description], [1150.5, INCOME, "Pix", "Ana Souza"]);
+  const b = parseBankText("Pix enviado para Mercado Bom R$ 32,90", TODAY);
+  deepEqual([b.amount, b.kind, b.type, b.description], [32.9, EXPENSE, "Pix", "Mercado Bom"]);
+  const c = parseBankText("Compra aprovada no cartão final 1234 em PADARIA CENTRAL R$ 18,50", TODAY);
+  deepEqual([c.amount, c.kind, c.type, c.description], [18.5, EXPENSE, "Cartão de crédito", "PADARIA CENTRAL"]);
+  const d = parseBankText("Salário depositado R$ 5.000,00", TODAY);
+  deepEqual([d.kind, d.amount], [INCOME, 5000]);
+  const e = parseBankText("12/10 Pix recebido R$ 20,00", TODAY);
+  deepEqual([e.date, e.kind], ["2026-10-12", INCOME]);
+  const f = parseBankText("Saldo atualizado R$ 1.000,00", TODAY);
+  equal(f.kind, null, "sem pista: não chuta despesa");
+  equal(parseBankText("sem valor nenhum aqui", TODAY).amount, null);
+});
+
+// ---------------------------------------------------------- bloqueio (PIN)
+
+test("PIN: guarda só o hash, confere certo e recusa errado", async () => {
+  assert(PIN_RE.test("1234") && PIN_RE.test("12345678"));
+  assert(!PIN_RE.test("123") && !PIN_RE.test("123456789") && !PIN_RE.test("12a4"));
+  const record = await hashPin("2468");
+  assert(!JSON.stringify(record).includes("2468"));
+  equal(await verifyPin("2468", record), true);
+  equal(await verifyPin("2469", record), false);
+  equal(await verifyPin("abc", record), false);
+  equal(await verifyPin("2468", null), false);
+  const other = await hashPin("2468");
+  assert(other.hash !== record.hash && other.salt !== record.salt, "sal diferente a cada PIN");
+  let failed = false;
+  try { await hashPin("12"); } catch { failed = true; }
+  assert(failed, "PIN curto é recusado");
+});
+
+test("bloqueio: base64url e espera depois de muitos erros", () => {
+  const bytes = Uint8Array.from([0, 250, 251, 252, 253, 254, 255, 62, 63]);
+  deepEqual([...b64ToBytes(bytesToB64(bytes))], [...bytes]);
+  assert(!/[+/=]/.test(bytesToB64(bytes)));
+  deepEqual([0, 4, 5, 6, 7, 20].map(lockoutSeconds), [0, 0, 30, 60, 120, 900]);
+});
+
+// ---------------------------------------------------------- armazenamento
+
+test("dados salvos por versões antigas continuam valendo (sem os campos novos)", () => {
+  const old = { version: 1, nextId: 3, budgets: { Lazer: 300 }, settings: { theme: "dark", period: "Ano", lastKind: "Receita", lastCategory: "Trabalho" },
+    transactions: [{ id: 1, description: "Cinema", amount: 50, kind: EXPENSE, category: "Lazer", date: "2026-10-10" },
+      { id: 2, description: "Salário", amount: 5000, kind: INCOME, category: "Trabalho", date: "2026-10-05", recurring: true, until: "2027-01" }] };
+  const s = sanitize(old);
+  equal(s.transactions.length, 2);
+  deepEqual([s.transactions[0].recurring, s.transactions[0].type, s.transactions[0].subcategory, s.transactions[0].plan], [false, "", "", null]);
+  deepEqual([s.transactions[1].recurring, s.transactions[1].until], [true, "2027-01"]);
+  deepEqual([s.settings.theme, s.settings.period, s.settings.lastKind], ["dark", "Ano", INCOME]);
+  deepEqual([s.cards, s.types, s.profile.name, s.lock.device, s.lock.pin, s.settings.openingBalance], [[], [], "", null, null, 0]);
+  equal(s.nextId, 3);
+});
+
+test("armazenamento descarta lixo e valida cartões, financiamentos e bloqueio", () => {
+  const plan = { system: "price", principal: 1000, entry: 0, rate: 1.5, count: 12 };
+  const s = sanitize({
+    transactions: [
+      { id: 1, description: "Moto", amount: 90, kind: INCOME, category: "X", date: "2026-10-10", plan },
+      { id: 2, description: "Ruim", amount: -5, kind: EXPENSE, category: "X", date: "2026-10-10" },
+      { id: 3, description: "Plano ruim", amount: 5, kind: EXPENSE, category: "X", date: "2026-10-10", plan: { ...plan, count: 9999 } },
+      { id: "4", description: "Id ruim", amount: 5, kind: EXPENSE, category: "X", date: "2026-10-10" },
+      { id: 5, description: "Data ruim", amount: 5, kind: EXPENSE, category: "X", date: "ontem" },
+    ],
+    cards: [{ name: "Nubank", limit: 1000, closingDay: 25, dueDay: 5 }, { name: "Nubank", limit: 5, closingDay: 1 }, { name: "Sem dia", limit: 5, closingDay: 40 }, { name: "", limit: 5, closingDay: 3 }],
+    types: ["Pix", " Pix ", "", 7, "Vale"],
+    profile: { name: "  Ana   Maria ", color: "javascript:alert(1)" },
+    lock: { device: "AAAA", pin: { salt: 1, hash: "x" }, timeout: 7 },
+    settings: { openingBalance: "muito", categoryView: "x", dashboard: { order: ["saldo", 3], visible: { saldo: false, fluxo: "sim" } } },
+  });
+  deepEqual(s.transactions.map((t) => t.id), [1, 3]);
+  equal(s.transactions[0].kind, EXPENSE, "financiamento é sempre despesa");
+  equal(s.transactions[1].plan, null, "plano inválido vira lançamento comum");
+  deepEqual(s.cards.map((c) => c.name), ["Nubank"]);
+  deepEqual(s.types, ["Pix", "Vale"]);
+  deepEqual([s.profile.name, s.profile.color], ["Ana Maria", defaults().profile.color]);
+  deepEqual([s.lock.device, s.lock.pin, s.lock.timeout], [null, null, 1], "chave curta, PIN malformado e prazo inválido são ignorados");
+  deepEqual([s.settings.openingBalance, s.settings.categoryView, s.settings.dashboard.order, s.settings.dashboard.visible], [0, "categoria", ["saldo"], { saldo: false }]);
+  equal(sanitize(null).transactions.length, 0);
+  equal(sanitize("texto").nextId, 1);
+});
+
+test("backup leva tudo, menos o bloqueio e os ids", () => {
+  const s = defaults();
+  s.lock = { device: "ABCDEFGH12", pin: { salt: "a", hash: "b" }, timeout: 5 };
+  s.cards = [{ name: "Nubank", limit: 1000, closingDay: 25, dueDay: 5 }];
+  s.transactions = [{ id: 9, description: "Mercado", amount: 10, kind: EXPENSE, category: "Alimentação", date: "2026-10-10", recurring: false, until: null, type: "Pix", subcategory: "", plan: null }];
+  const b = backupData(s);
+  equal(b.app, "titanium");
+  equal(b.version, 2);
+  assert(!("lock" in b) && !("nextId" in b));
+  assert(!JSON.stringify(b).includes("ABCDEFGH12") && !JSON.stringify(b).includes('"hash"'));
+  deepEqual([b.cards.length, "id" in b.transactions[0], b.transactions[0].type], [1, false, "Pix"]);
+});
+
+export const outcome = await report();
+

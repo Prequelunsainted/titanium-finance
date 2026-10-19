@@ -195,7 +195,9 @@ export function comparisonLabel(period, today = todayIso()) {
 export const signed = (t) => (t.kind === INCOME ? t.amount : -t.amount);
 
 /** Valida os campos digitados e devolve uma movimentação pronta para salvar (sem id). */
-export function makeTransaction({ description, amount, kind, category, when, recurring = false, until = "" }, today = todayIso()) {
+const clean = (text, max = 40) => String(text ?? "").split(/\s+/).filter(Boolean).join(" ").slice(0, max);
+
+export function makeTransaction({ description, amount, kind, category, when, recurring = false, until = "", type = "", subcategory = "" }, today = todayIso()) {
   const desc = String(description ?? "").split(/\s+/).filter(Boolean).join(" ");
   if (!desc) throw new ValidationError("Informe uma descrição.");
   if (desc.length > 120) throw new ValidationError("A descrição pode ter no máximo 120 caracteres.");
@@ -211,7 +213,7 @@ export function makeTransaction({ description, amount, kind, category, when, rec
     if (until < date.slice(0, 7)) throw new ValidationError("O fim do lançamento fixo não pode ser antes do início.");
     end = until;
   }
-  return { description: desc, amount: value, kind, category: cat, date, recurring: isFixed, until: end };
+  return { description: desc, amount: value, kind, category: cat, date, recurring: isFixed, until: end, type: clean(type), subcategory: clean(subcategory), plan: null };
 }
 
 // ------------------------------------------------- lançamentos fixos (mensais)
@@ -244,6 +246,12 @@ export function expandRange(items, start, end, cap = null) {
 
   const out = [];
   for (const t of items) {
+    if (t.plan) {
+      for (const row of financingSchedule(t.plan, t.date)) {
+        if (row.date >= from && row.date < to) out.push({ ...t, amount: row.payment, date: row.date, installment: row.n, installments: t.plan.count });
+      }
+      continue;
+    }
     if (!t.recurring) { if (t.date >= from && t.date < to) out.push(t); continue; }
     for (let m = monthStart(from < t.date ? t.date : from); m < to; m = addMonths(m, 1)) {
       const d = occurrenceDate(t, m);
@@ -276,23 +284,27 @@ export function monthOverview(items, monthIso, today = todayIso()) {
   const sum = (pred) => round2(list.filter(pred).reduce((a, t) => a + t.amount, 0));
   const income = sum((t) => t.kind === INCOME), expense = sum((t) => t.kind === EXPENSE);
   const fixedExpense = sum((t) => t.kind === EXPENSE && t.recurring);
+  const installmentExpense = sum((t) => t.kind === EXPENSE && t.plan);
+  const committed = round2(fixedExpense + installmentExpense);
   const current = monthStart(today);
   return {
     month: monthIso, items: list, income, expense, balance: round2(income - expense),
-    fixedExpense, oneOffExpense: round2(expense - fixedExpense),
+    fixedExpense, installmentExpense, committed, oneOffExpense: round2(expense - committed),
     fixedIncome: sum((t) => t.kind === INCOME && t.recurring),
-    commitment: income > 0 ? fixedExpense / income : null,
+    commitment: income > 0 ? committed / income : null,
     status: monthIso > current ? "futuro" : monthIso === current ? "atual" : "passado",
   };
 }
 
-export function filterTransactions(items, { period = null, kind = null, category = null, text = "" } = {}) {
+export function filterTransactions(items, { period = null, kind = null, category = null, type = null, text = "" } = {}) {
   const needle = text.trim().toLocaleLowerCase("pt-BR");
+  const has = (value) => String(value ?? "").toLocaleLowerCase("pt-BR").includes(needle);
   return items.filter((t) =>
     (!period || periodContains(period, t.date)) &&
     (!kind || t.kind === kind) &&
     (!category || t.category === category) &&
-    (!needle || t.description.toLocaleLowerCase("pt-BR").includes(needle) || t.category.toLocaleLowerCase("pt-BR").includes(needle)));
+    (!type || t.type === type) &&
+    (!needle || has(t.description) || has(t.category) || has(t.subcategory) || has(t.type)));
 }
 
 /** Da mais recente para a mais antiga. */
@@ -300,15 +312,20 @@ export const sortRecent = (items) => [...items].sort((a, b) => (a.date === b.dat
 
 export function summarize(items) {
   let income = 0, expense = 0;
-  const cats = new Map();
+  const cats = new Map(), subs = new Map();
   for (const t of items) {
     if (t.kind === INCOME) income += t.amount;
-    else { expense += t.amount; cats.set(t.category, (cats.get(t.category) ?? 0) + t.amount); }
+    else {
+      expense += t.amount;
+      cats.set(t.category, (cats.get(t.category) ?? 0) + t.amount);
+      const label = t.subcategory ? `${t.category} › ${t.subcategory}` : t.category;
+      subs.set(label, (subs.get(label) ?? 0) + t.amount);
+    }
   }
-  const byCategory = [...cats].map(([c, v]) => [c, round2(v)]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
+  const rank = (map) => [...map].map(([c, v]) => [c, round2(v)]).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "pt-BR"));
   income = round2(income); expense = round2(expense);
   const balance = round2(income - expense);
-  return { income, expense, balance, count: items.length, byCategory, savingsRate: income > 0 ? balance / income : null };
+  return { income, expense, balance, count: items.length, byCategory: rank(cats), bySubcategory: rank(subs), savingsRate: income > 0 ? balance / income : null };
 }
 
 /** As `limit` maiores categorias; o resto vira "Outras". */
@@ -353,16 +370,203 @@ export function budgetStatuses(budgets, monthItems) {
     .sort((a, b) => b.ratio - a.ratio || a.category.localeCompare(b.category, "pt-BR"));
 }
 
+
+// ----------------------------------------------- financiamentos e parcelamentos
+// Um financiamento é guardado como UMA movimentação com `plan`; cada parcela vira uma ocorrência
+// (como nos lançamentos fixos). `date` é o vencimento da primeira parcela.
+
+export const FINANCING_SYSTEMS = {
+  "sem-juros": "Parcelado sem juros",
+  price: "Price (parcela fixa)",
+  sac: "SAC (parcela decrescente)",
+};
+
+/** Converte a taxa digitada em "% ao ano" para "% ao mês" (juros compostos). */
+export const monthlyRate = (rate, unit = "mes") => (unit === "ano" ? (Math.pow(1 + rate / 100, 1 / 12) - 1) * 100 : rate);
+
+function dayInMonth(monthIso, day) {
+  const [y, m] = parts(monthIso);
+  return toIso(y, m, Math.min(day, lastDayOf(y, m)));
+}
+
+/**
+ * Tabela de parcelas. Contas em centavos inteiros: a última parcela absorve os arredondamentos
+ * e o saldo devedor termina exatamente em zero.
+ */
+export function financingSchedule(plan, firstDate) {
+  const { system, principal, count } = plan;
+  const i = system === "sem-juros" ? 0 : plan.rate / 100;
+  const P = Math.round(principal * 100);
+  const pmt = system === "price" ? (i === 0 ? Math.round(P / count) : Math.round((P * i) / (1 - Math.pow(1 + i, -count)))) : 0;
+  const day = +firstDate.slice(8), first = monthStart(firstDate);
+
+  let balance = P;
+  const rows = [];
+  for (let n = 1; n <= count; n++) {
+    const last = n === count;
+    const interest = Math.round(balance * i);
+    let amort, payment;
+    if (system === "price") {
+      payment = last ? balance + interest : pmt;
+      amort = payment - interest;
+      if (amort > balance) { amort = balance; payment = amort + interest; }
+    } else {
+      amort = last ? balance : Math.min(balance, Math.round(P / count));
+      payment = amort + interest;
+    }
+    balance -= amort;
+    rows.push({
+      n, date: n === 1 ? firstDate : dayInMonth(addMonths(first, n - 1), day),
+      payment: payment / 100, interest: interest / 100, amortization: amort / 100, balance: balance / 100,
+    });
+  }
+  return rows;
+}
+
+const sumOf = (rows, key) => round2(rows.reduce((a, r) => a + r[key], 0));
+
+/** Onde está o financiamento hoje: pago, a pagar, saldo devedor, juros e próxima parcela. */
+export function financingSummary(t, today = todayIso()) {
+  const rows = financingSchedule(t.plan, t.date);
+  const paid = rows.filter((r) => r.date <= today), open = rows.filter((r) => r.date > today);
+  return {
+    rows, count: rows.length, paidCount: paid.length, remainingCount: open.length,
+    paidTotal: sumOf(paid, "payment"), remainingTotal: sumOf(open, "payment"),
+    total: sumOf(rows, "payment"), interestTotal: sumOf(rows, "interest"),
+    balance: paid.length ? paid.at(-1).balance : t.plan.principal,
+    next: open[0] ?? null, progress: paid.length / rows.length, done: open.length === 0,
+  };
+}
+
+/** Compara Price x SAC para o mesmo valor, taxa (% ao mês) e prazo. */
+export function compareSystems(principal, rate, count, firstDate = todayIso()) {
+  const make = (system) => {
+    const rows = financingSchedule({ system, principal, rate, count }, firstDate);
+    return { first: rows[0].payment, last: rows.at(-1).payment, total: sumOf(rows, "payment"), interest: sumOf(rows, "interest") };
+  };
+  return { price: make("price"), sac: make("sac") };
+}
+
+/** Valida o formulário de financiamento e devolve uma movimentação com `plan` (sem id). */
+export function makeFinancing({ description, principal, entry = "", rate = "", rateUnit = "mes", count, system, when, category, type = "" }, today = todayIso()) {
+  const desc = clean(description, 120);
+  if (!desc) throw new ValidationError("Dê um nome ao financiamento.");
+  if (!Object.hasOwn(FINANCING_SYSTEMS, system)) throw new ValidationError("Escolha o sistema de pagamento.");
+  const P = typeof principal === "number" ? round2(principal) : parseAmount(principal);
+  const down = String(entry ?? "").trim() === "" ? 0 : typeof entry === "number" ? round2(entry) : parseAmount(entry);
+  const n = Number(count);
+  if (!Number.isInteger(n) || n < 1 || n > 480) throw new ValidationError("O número de parcelas deve ficar entre 1 e 480.");
+  let monthly = 0;
+  if (system !== "sem-juros") {
+    const raw = typeof rate === "number" ? rate : String(rate).trim() === "" ? 0 : parseAmountAllowZero(rate);
+    monthly = monthlyRate(raw, rateUnit);
+    if (monthly < 0 || monthly > 30) throw new ValidationError("Juros fora do normal: confira se a taxa está em % ao mês ou ao ano.");
+    monthly = Math.round(monthly * 10000) / 10000;
+  }
+  const date = parseDate(when ?? "", today);
+  const plan = { system, principal: P, entry: down, rate: system === "sem-juros" ? 0 : monthly, count: n };
+  const first = financingSchedule(plan, date)[0].payment;
+  return {
+    description: desc, amount: first, kind: EXPENSE, category: clean(category, 40) || "Financiamento", date,
+    recurring: false, until: null, type: clean(type), subcategory: "", plan,
+  };
+}
+
+function parseAmountAllowZero(text) {
+  const raw = String(text).trim().replace("%", "").replace(",", ".");
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) throw new ValidationError("Taxa inválida. Use números, como 1,5.");
+  return value;
+}
+
+// ------------------------------------------------------- saldo do dia (confere)
+
+/**
+ * Saldo dia a dia: `after = before + change`, sempre. É calculado na hora a partir dos lançamentos
+ * (nada fica guardado), então um dado antigo editado nunca deixa o saldo "fora de conta".
+ */
+export function dailyBalances(items, opening = 0) {
+  const byDate = new Map();
+  for (const t of items) byDate.set(t.date, round2((byDate.get(t.date) ?? 0) + signed(t)));
+  let balance = round2(opening);
+  return [...byDate].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([date, change]) => {
+    const before = balance;
+    balance = round2(balance + change);
+    return { date, before, change, after: balance };
+  });
+}
+
+// ------------------------------------------------------------ cartão de crédito
+
+export const DEFAULT_TYPES = ["Pix", "Dinheiro", "Débito", "Boleto", "Transferência"];
+
+/**
+ * Limite do cartão na fatura aberta: soma as despesas cujo "nome do tipo" é o nome do cartão,
+ * entre o último e o próximo fechamento.
+ */
+export function cardUsage(card, items, today = todayIso()) {
+  const thisClose = dayInMonth(monthStart(today), card.closingDay);
+  const nextClose = thisClose >= today ? thisClose : dayInMonth(addMonths(today, 1), card.closingDay);
+  const prevClose = dayInMonth(addMonths(nextClose, -1), card.closingDay);
+  const charges = expandRange(items, addDays(prevClose, 1), addDays(nextClose, 1))
+    .filter((t) => t.kind === EXPENSE && t.type === card.name);
+  const used = round2(charges.reduce((a, t) => a + t.amount, 0));
+  const ratio = card.limit > 0 ? used / card.limit : 0;
+  return {
+    used, limit: card.limit, available: round2(card.limit - used), ratio, level: budgetLevel(ratio),
+    closing: nextClose, daysToClosing: daysBetween(today, nextClose),
+    due: card.dueDay ? dayInMonth(addMonths(nextClose, nextClose.slice(8) >= String(card.dueDay).padStart(2, "0") ? 1 : 0), card.dueDay) : null,
+  };
+}
+
+// ------------------------------------------------- texto de notificação do banco
+
+const INCOME_WORDS = /\b(voc[eê] recebeu|recebeu|recebid[oa]|recebi|dep[oó]sito|depositad[oa]|estorno|reembolso|cr[eé]dito em conta|sal[aá]rio)\b/i;
+const EXPENSE_WORDS = /\b(voc[eê] enviou|enviou|enviad[oa]|pagamento|pagou|pago|compra|comprou|d[eé]bito|debitad[oa]|transferiu|saque|fatura|boleto)\b/i;
+const TYPE_WORDS = [[/pix/i, "Pix"], [/boleto/i, "Boleto"], [/transfer[eê]ncia|\bted\b|\bdoc\b/i, "Transferência"], [/saque|dinheiro/i, "Dinheiro"], [/d[eé]bito/i, "Débito"], [/cr[eé]dito|cart[aã]o/i, "Cartão de crédito"]];
+
+/**
+ * Entende uma notificação ou SMS do banco ("Você recebeu um Pix de Ana Souza de R$ 150,00"):
+ * valor, se é receita ou despesa, o nome do tipo e uma descrição. O que não der para saber vem vazio
+ * (o app pede para o usuário confirmar, em vez de chutar "despesa").
+ */
+export function parseBankText(text, today = todayIso()) {
+  const raw = String(text ?? "").replace(/\s+/g, " ").trim();
+  const money = raw.match(/R\$\s*([\d.]+,\d{2}|\d+(?:,\d{1,2})?)/i) ?? raw.match(/(\d{1,3}(?:\.\d{3})*,\d{2})/);
+  let amount = null;
+  if (money) { try { amount = parseAmount(money[1]); } catch { amount = null; } }
+
+  const inc = raw.search(INCOME_WORDS), exp = raw.search(EXPENSE_WORDS);
+  const kind = inc === -1 && exp === -1 ? null : exp === -1 || (inc !== -1 && inc < exp) ? INCOME : EXPENSE;
+  const type = TYPE_WORDS.find(([re]) => re.test(raw))?.[1] ?? "";
+
+  // O nome de quem enviou/recebeu: palavras com inicial maiúscula depois de "de/para/em".
+  const who = raw.match(/\b(?:de|da|do|para|pra|em|no|na)\s+((?:[A-ZÀ-Ú][\p{L}'.-]+)(?:\s+(?:d[aeo]s?\s+)?[A-ZÀ-Ú][\p{L}'.-]+){0,3})/u);
+  const name = who ? who[1].trim() : "";
+  const description = name || (type ? `${type} ${kind === INCOME ? "recebido" : kind === EXPENSE ? "pago" : ""}`.trim() : "");
+
+  let date = today;
+  const d = raw.match(/\b(\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)\b/);
+  if (d) { try { date = parseDate(d[1], today); } catch { /* usa hoje */ } }
+  return { amount, kind, type, description, date };
+}
+
 // -------------------------------------------------------------------- CSV
 
 const csvCell = (text) => (/[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text);
 
 /** CSV que abre direto no Excel em português (";" e vírgula decimal) — o mesmo do app de computador. */
-export function exportCsv(items) {
-  const rows = [["Data", "Descrição", "Categoria", "Tipo", "Valor", "Recorrência", "Até"]];
-  for (const t of items) {
-    rows.push([formatDate(t.date), t.description, t.category, t.kind, signed(t).toFixed(2).replace(".", ","),
-      t.recurring ? "Fixo" : "Avulso", t.until ?? ""]);
+export function exportCsv(items, today = todayIso()) {
+  const rows = [["Data", "Descrição", "Categoria", "Tipo", "Valor", "Recorrência", "Até", "Subcategoria", "Nome do tipo"]];
+  for (const base of items) {
+    // Um financiamento vira uma linha por parcela já vencida, como num extrato.
+    const list = base.plan
+      ? expandRange([base], null, null, today).map((r) => ({ ...r, description: `${r.description} (${r.installment}/${r.installments})` }))
+      : [base];
+    for (const t of list) {
+      rows.push([formatDate(t.date), t.description, t.category, t.kind, signed(t).toFixed(2).replace(".", ","),
+        t.recurring ? "Fixo" : "Avulso", t.until ?? "", t.subcategory ?? "", t.type ?? ""]);
+    }
   }
   return "﻿" + rows.map((r) => r.map(csvCell).join(";")).join("\r\n") + "\r\n";
 }
@@ -396,7 +600,8 @@ export function importCsv(text, today = todayIso()) {
   if (!rows.length) return { items: [], skipped: 0 };
   const header = rows[0].map((h) => h.trim().toLocaleLowerCase("pt-BR"));
   const col = (name) => header.indexOf(name);
-  const [iDate, iDesc, iCat, iKind, iValue, iRec, iUntil] = ["data", "descrição", "categoria", "tipo", "valor", "recorrência", "até"].map(col);
+  const [iDate, iDesc, iCat, iKind, iValue, iRec, iUntil, iSub, iTypeName] =
+    ["data", "descrição", "categoria", "tipo", "valor", "recorrência", "até", "subcategoria", "nome do tipo"].map(col);
   if ([iDate, iDesc, iValue].includes(-1)) return { items: [], skipped: rows.length - 1 };
 
   const items = [];
@@ -411,6 +616,7 @@ export function importCsv(text, today = todayIso()) {
         category: iCat >= 0 ? row[iCat] : "", when: row[iDate] ?? "",
         recurring: iRec >= 0 && (row[iRec] ?? "").trim().toLocaleLowerCase("pt-BR") === "fixo",
         until: iUntil >= 0 ? (row[iUntil] ?? "").trim() : "",
+        subcategory: iSub >= 0 ? row[iSub] : "", type: iTypeName >= 0 ? row[iTypeName] : "",
       }, today));
     } catch { skipped++; }
   }
@@ -428,38 +634,44 @@ function mulberry32(seed) {
   };
 }
 
+// [descrição, categoria, mín, máx, dias, nome do tipo, subcategoria]
 const MONTHLY = [
-  ["Conta de luz", "Moradia", 140, 230, [12]], ["Supermercado", "Alimentação", 180, 340, [3, 14, 24]],
-  ["Padaria", "Alimentação", 18, 45, [2, 9, 17, 27]], ["Uber", "Transporte", 18, 46, [4, 11, 15, 22]],
-  ["Combustível", "Transporte", 150, 220, [8, 23]], ["Farmácia", "Saúde", 35, 120, [19]],
-  ["Cinema", "Lazer", 40, 80, [13]], ["Restaurante", "Lazer", 60, 150, [20, 28]],
-  ["Fatura do cartão", "Cartão", 250, 520, [25]],
+  ["Conta de luz", "Moradia", 140, 230, [12], "Boleto", "Energia"], ["Supermercado", "Alimentação", 180, 340, [3, 14, 24], "Cartão Nubank", "Mercado"],
+  ["Padaria", "Alimentação", 18, 45, [2, 9, 17, 27], "Pix", "Padaria"], ["Uber", "Transporte", 18, 46, [4, 11, 15, 22], "Pix", "Aplicativo"],
+  ["Combustível", "Transporte", 150, 220, [8, 23], "Débito", "Combustível"], ["Farmácia", "Saúde", 35, 120, [19], "Débito", "Remédios"],
+  ["Cinema", "Lazer", 40, 80, [13], "Cartão Nubank", "Cinema"], ["Restaurante", "Lazer", 60, 150, [20, 28], "Cartão Nubank", "Restaurantes"],
 ];
 // Guardados uma vez só e repetidos todo mês (lançamentos fixos).
 const FIXED = [
-  ["Salário", "Trabalho", 6500, INCOME, 5], ["Aluguel", "Moradia", 1450, EXPENSE, 6],
-  ["Internet", "Tecnologia", 99.9, EXPENSE, 10], ["Curso online", "Educação", 89.9, EXPENSE, 15],
-  ["Academia", "Saúde", 119.9, EXPENSE, 8],
+  ["Salário", "Trabalho", 6500, INCOME, 5, "Transferência"], ["Aluguel", "Moradia", 1450, EXPENSE, 6, "Boleto"],
+  ["Internet", "Tecnologia", 99.9, EXPENSE, 10, "Cartão Nubank"], ["Curso online", "Educação", 89.9, EXPENSE, 15, "Cartão Nubank"],
+  ["Academia", "Saúde", 119.9, EXPENSE, 8, "Pix"],
 ];
 export const DEMO_BUDGETS = { Moradia: 1700, Alimentação: 1000, Transporte: 400, Lazer: 300, Saúde: 200 };
+export const DEMO_CARDS = [{ name: "Cartão Nubank", limit: 4000, closingDay: 25, dueDay: 5 }];
 
 /** Um ano de movimentações de exemplo, para conhecer o app sem digitar nada. */
 export function demoTransactions(today = todayIso(), months = 12, seed = 7) {
   const rng = mulberry32(seed);
   const firstMonth = addMonths(monthStart(today), -(months - 1));
-  const items = FIXED.map(([description, category, amount, kind, day]) => ({
-    description, category, kind, amount, date: addDays(firstMonth, day - 1), recurring: true, until: null,
+  const items = FIXED.map(([description, category, amount, kind, day, type]) => ({
+    description, category, kind, amount, date: addDays(firstMonth, day - 1), recurring: true, until: null, type, subcategory: "", plan: null,
   }));
+  // Um financiamento de moto (Price, 36x) que começou há 4 meses.
+  items.push(makeFinancing({
+    description: "Moto", principal: 12000, entry: 3000, rate: 1.2, count: 36, system: "price",
+    when: addDays(addMonths(monthStart(today), -4), 19), category: "Transporte", type: "Boleto",
+  }, today));
   for (let back = months - 1; back >= 0; back--) {
     const first = addMonths(monthStart(today), -back);
     const rows = [];
-    if (back % 3 === 0) rows.push(["Projeto freelance", "Trabalho", 450, 900, [18], INCOME]);
+    if (back % 3 === 0) rows.push(["Projeto freelance", "Trabalho", 450, 900, [18], "Pix", "", INCOME]);
     for (const r of MONTHLY) rows.push([...r, EXPENSE]);
-    for (const [description, category, low, high, days, kind] of rows) {
+    for (const [description, category, low, high, days, type, subcategory, kind] of rows) {
       for (const d of days) {
         const date = addDays(first, d - 1);
         if (date > today || date.slice(0, 7) !== first.slice(0, 7)) continue;
-        items.push({ description, category, kind, date, amount: low === high ? low : round2(low + rng() * (high - low)), recurring: false, until: null });
+        items.push({ description, category, kind, date, amount: low === high ? low : round2(low + rng() * (high - low)), recurring: false, until: null, type, subcategory, plan: null });
       }
     }
   }

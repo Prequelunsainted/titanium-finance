@@ -24,6 +24,7 @@
         <h1 id="title">Visão geral</h1>
         <p id="subtitle"></p>
       </div>
+      <button class="avatar" id="avatar" type="button" aria-label="Perfil"></button>
     </header>
 
     <div class="seg period" id="period" role="radiogroup" aria-label="Período"></div>
@@ -76,6 +77,12 @@
       </div>
       <p class="hint freq-hint" id="freq-hint"></p>
 
+      <button type="button" class="link bank-link" id="bank-toggle">📋 Colar mensagem do banco (Pix, compra…)</button>
+      <div class="bank" id="bank-wrap" hidden>
+        <textarea id="bank-text" rows="3" placeholder="Cole aqui a notificação ou o SMS do banco. Ex.: Você recebeu um Pix de Ana Souza no valor de R$ 150,00"></textarea>
+        <div class="bank-row"><button type="button" class="btn small" id="bank-go">Entender mensagem</button><span class="hint" id="bank-msg"></span></div>
+      </div>
+
       <label class="field">
         <span>Descrição</span>
         <input id="f-description" type="text" maxlength="120" autocomplete="off" placeholder="Ex.: Supermercado" enterkeyhint="next">
@@ -110,6 +117,26 @@
         <input id="f-new" type="text" maxlength="40" autocomplete="off">
       </label>
 
+      <label class="field">
+        <span>Subcategoria (opcional)</span>
+        <input id="f-sub" type="text" maxlength="40" autocomplete="off" list="subs" placeholder="Ex.: Mercado, Restaurante">
+        <datalist id="subs"></datalist>
+      </label>
+
+      <label class="field">
+        <span>Nome do tipo (opcional)</span>
+        <select id="f-type"></select>
+      </label>
+      <label class="field" id="f-type-new-wrap" hidden>
+        <span>Nome do novo tipo</span>
+        <input id="f-type-new" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: Pix Itaú, Vale-refeição">
+      </label>
+
+      <label class="checkrow" id="f-all-wrap" hidden>
+        <input type="checkbox" id="f-all">
+        <span>Aplicar categoria, subcategoria e tipo a todos os lançamentos com esta descrição</span>
+      </label>
+
       <p class="error" id="sheet-error" role="alert"></p>
 
       <div class="sheet-actions">
@@ -120,6 +147,31 @@
       </div>
     </form>
   </dialog>
+
+  <dialog id="panel" aria-labelledby="panel-title">
+    <form id="panel-form" novalidate>
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <h2 id="panel-title"></h2>
+      <div id="panel-body"></div>
+      <p class="error" id="panel-error" role="alert"></p>
+      <div class="sheet-actions" id="panel-actions"></div>
+    </form>
+  </dialog>
+
+  <div class="lock" id="lock" role="dialog" aria-modal="true" aria-labelledby="lock-title" hidden>
+    <div class="lock-card">
+      <img class="logo" src="icons/icon-192.png" alt="" width="72" height="72">
+      <h2 id="lock-title">Titanium bloqueado</h2>
+      <p id="lock-sub" class="hint"></p>
+      <button type="button" class="btn primary" id="lock-device">Desbloquear com o celular</button>
+      <form id="lock-pin-form" autocomplete="off">
+        <input id="lock-pin" type="password" inputmode="numeric" maxlength="8" placeholder="PIN do app" autocomplete="off" aria-label="PIN do app">
+        <button type="submit" class="btn">Entrar</button>
+      </form>
+      <p class="error" id="lock-msg" role="alert"></p>
+      <button type="button" class="link" id="lock-forgot">Esqueci o acesso</button>
+    </div>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <input type="file" id="file" accept=".csv,.json,text/csv,application/json" hidden>
