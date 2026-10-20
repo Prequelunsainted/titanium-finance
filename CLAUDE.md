@@ -12,7 +12,7 @@ Controle financeiro pessoal, 100% offline e grátis, em duas versões que trocam
 | **Desktop** | `titanium/` (+ `app.py` atalho) | Python 3.10+, CustomTkinter, SQLite, Matplotlib | Painel, lista, orçamentos, CSV. **Sem** fixo/avulso, mês a mês, financiamentos, tipo/subcategoria, cartão, perfil/bloqueio (pendente, veja Backlog) |
 | **Mobile (PWA)** | `mobile/` | JavaScript puro (ES modules), SVG, localStorage, service worker | Completa (v2.2.0) |
 
-- Repositório: `Prequelunsainted/Controle-financeiro1.2` (nome antigo; o app se chama **Titanium Finance**). Dono: Lucas Gabriel (`Prequelunsainted`).
+- Repositório: `Prequelunsainted/titanium-finance` (o antigo `Controle-financeiro1.2` foi abandonado: não publique mais lá). Dono: Lucas Gabriel (`Prequelunsainted`).
 - Design no Figma: <https://www.figma.com/design/hYQlEvC2TZuf26hcK3QDy2> (variáveis de cor claro/escuro, componentes). O código usa as mesmas cores (`--accent #2DD4BF` escuro / `#0D9488` claro etc. em `mobile/style.css` e `titanium/app.py`).
 - Modelo visual de referência: o app **Gamera** (`Prequelunsainted/Gamera-Secure-Password-Generator`): mesma estrutura (pacote + `core` puro + testes + PWA em `mobile/`).
 
@@ -101,14 +101,14 @@ O que elogiam e mantemos: ser gratuito de verdade, ter a maioria das informaçõ
 
 ## Git e publicação
 
-- Branch de trabalho: `v2-hub`; publica-se com `git push origin v2-hub:main` (sem `gh` instalado; sem PR). Pode abrir o login do GitHub (Git Credential Manager) em uma janela.
+- Branch de trabalho: `v2-hub`; publica-se com `git push titanium v2-hub:main` (remote `titanium` = titanium-finance; `origin` é o repositório antigo, não use) (sem `gh` instalado; sem PR). Pode abrir o login do GitHub (Git Credential Manager) em uma janela.
 - Autor local dos commits: `Lucas Gabriel Barreto <lucas2907.office@gmail.com>`. Mensagem em português; termine com a linha `Co-Authored-By` indicada no contexto da sessão.
 - **Só publique depois de o usuário dizer "sim"** (ele já aprovou os pushes anteriores caso a caso).
-- GitHub Pages precisa ser ativado pelo usuário (*Settings → Pages → main / root*) para a URL do PWA: `https://prequelunsainted.github.io/Controle-financeiro1.2/mobile/` (muda se o repo for renomeado).
+- GitHub Pages precisa ser ativado pelo usuário (*Settings → Pages → main / root*) para a URL do PWA: `https://prequelunsainted.github.io/titanium-finance/` (a raiz redireciona para `mobile/`).
 
 ## Backlog
 
 1. **Paridade no desktop** (proposta já criada como tarefa): fixo/avulso, mês a mês, financiamentos, nome do tipo/subcategoria, cartão, saldo do dia, CSV com as colunas novas. Reaproveitar a lógica de `mobile/core.js` portando para `titanium/core.py` + migração SQLite (`ALTER TABLE`).
 2. Testar bloqueio por senha do celular e "compartilhar para o app" em **celular real** (Android Chrome instalado como PWA).
 3. Ideias: mais de um perfil, transferência entre contas, categorias com ícone/cor, metas de economia, gráfico de patrimônio, notificação de vencimento, antecipação de parcelas com desconto de juros.
-4. Renomear o repositório para `titanium-finance` e o arquivo do Figma (a API não renomeia).
+4. Renomear o arquivo do Figma para "Titanium Finance — Hub" (a API não renomeia).

@@ -41,8 +41,8 @@ O **Titanium** é um app desktop de controle financeiro pessoal feito em Python.
 ## 📦 Instalação
 
 ```bash
-git clone https://github.com/Prequelunsainted/Controle-financeiro1.2.git
-cd Controle-financeiro1.2
+git clone https://github.com/Prequelunsainted/titanium-finance.git
+cd titanium-finance
 pip install -r requirements.txt
 ```
 
@@ -92,7 +92,7 @@ Na pasta [`mobile/`](mobile) há uma versão do Titanium para celular, feita com
 
 ![Titanium no celular](docs/mobile.png)
 
-**Instalar:** abra **<https://prequelunsainted.github.io/Controle-financeiro1.2/mobile/>** no celular (ative antes em *Settings → Pages → Deploy from a branch → `main` / root*) e
+**Instalar:** abra **<https://prequelunsainted.github.io/titanium-finance/>** no celular e
 - **Android (Chrome):** menu ⋮ → *Instalar app* (ou use o botão **Instalar app** da aba *Mais*);
 - **iPhone (Safari):** botão Compartilhar → *Adicionar à Tela de Início*.
 
