@@ -7,7 +7,7 @@ import {
 } from "./core.js";
 import { PROFILE_COLORS } from "./store.js";
 import { LOCK_TIMEOUTS, PIN_RE, deviceLockAvailable, hashPin, registerDeviceLock } from "./security.js";
-import { $, esc, parseSigned } from "./util.js";
+import { $, centerCrop, cropSource, esc, fitCrop, parseSigned, zoomCrop } from "./util.js";
 import { icon } from "./icons.js";
 
 const SYSTEM_SHORT = { "sem-juros": "Sem juros", price: "Price", sac: "SAC" };
@@ -56,8 +56,10 @@ export function createPanels(app) {
 
   // ------------------------------------------------------------------ perfil
 
-  /** Reduz a foto escolhida para 256×256 (recorte central), para caber no armazenamento do celular. */
-  async function shrinkPhoto(file) {
+  const PHOTO_SIZE = 256;
+
+  /** Abre a imagem escolhida. Fotos muito grandes são reduzidas para o recorte ficar leve no celular. */
+  async function loadPhoto(file) {
     const url = URL.createObjectURL(file);
     try {
       const img = await new Promise((resolve, reject) => {
@@ -66,37 +68,182 @@ export function createPanels(app) {
         i.onerror = () => reject(new Error("imagem"));
         i.src = url;
       });
-      const side = Math.min(img.naturalWidth, img.naturalHeight);
-      const canvas = Object.assign(document.createElement("canvas"), { width: 256, height: 256 });
-      canvas.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
-      return canvas.toDataURL("image/jpeg", 0.85);
+      const k = Math.min(1, 2048 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = Object.assign(document.createElement("canvas"), { width: Math.round(img.naturalWidth * k), height: Math.round(img.naturalHeight * k) });
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas;
     } finally {
       URL.revokeObjectURL(url);
     }
   }
 
+  /** Gira a imagem 90° no sentido horário. */
+  function rotated(src) {
+    const canvas = Object.assign(document.createElement("canvas"), { width: src.height, height: src.width });
+    const g = canvas.getContext("2d");
+    g.translate(canvas.width, 0);
+    g.rotate(Math.PI / 2);
+    g.drawImage(src, 0, 0);
+    return canvas;
+  }
+
+  /**
+   * Tela de ajuste dentro da folha do perfil: arrastar posiciona, pinça/roda/controle dão zoom, girar vira 90°.
+   * O círculo mostra exatamente o que aparece no avatar. Devolve a foto final (data URL) ou null se cancelar.
+   */
+  function cropPhoto(source) {
+    return new Promise((resolve) => {
+      const box = $("#p-crop"), stage = $("#p-stage"), canvas = $("#p-canvas"), zoomInput = $("#p-zoom");
+      const others = [...$("#panel-body").children].filter((el) => el !== box);
+      const actionsBar = $("#panel-actions"), title = $("#panel-title"), oldTitle = title.textContent;
+      let src = source, view = null;
+      const pointers = new Map();
+      let pinch = null;
+
+      const size = () => stage.clientWidth;
+      const draw = () => {
+        const px = size(), ratio = window.devicePixelRatio || 1;
+        if (canvas.width !== Math.round(px * ratio)) { canvas.width = canvas.height = Math.round(px * ratio); }
+        const g = canvas.getContext("2d");
+        g.setTransform(ratio, 0, 0, ratio, 0, 0);
+        g.clearRect(0, 0, px, px);
+        g.drawImage(src, view.x, view.y, src.width * view.scale, src.height * view.scale);
+        zoomInput.value = String(view.zoom);
+      };
+      const reset = () => { view = centerCrop(src.width, src.height, size()); draw(); };
+      const setZoom = (z, px, py) => { view = zoomCrop(view, z, px, py); draw(); };
+      const local = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+
+      const onDown = (e) => {
+        try { stage.setPointerCapture(e.pointerId); } catch { /* alguns navegadores recusam: o arraste segue funcionando dentro do quadro */ }
+        pointers.set(e.pointerId, local(e));
+        if (pointers.size === 2) {
+          const [a, b] = [...pointers.values()];
+          pinch = { dist: Math.hypot(a[0] - b[0], a[1] - b[1]), zoom: view.zoom };
+        }
+      };
+      const onMove = (e) => {
+        if (!pointers.has(e.pointerId)) return;
+        const prev = pointers.get(e.pointerId), now = local(e);
+        pointers.set(e.pointerId, now);
+        if (pointers.size === 1) {
+          view = fitCrop({ ...view, x: view.x + now[0] - prev[0], y: view.y + now[1] - prev[1] });
+          draw();
+        } else if (pinch && pointers.size === 2) {
+          const [a, b] = [...pointers.values()];
+          setZoom(pinch.zoom * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.dist, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+        }
+      };
+      const onUp = (e) => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = null; };
+      const onWheel = (e) => { e.preventDefault(); const [x, y] = local(e); setZoom(view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), x, y); };
+      const onKey = (e) => {
+        const step = 10, moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+        if (moves[e.key]) { e.preventDefault(); view = fitCrop({ ...view, x: view.x + moves[e.key][0], y: view.y + moves[e.key][1] }); draw(); }
+        else if (e.key === "+" || e.key === "=") setZoom(view.zoom * 1.15);
+        else if (e.key === "-") setZoom(view.zoom / 1.15);
+      };
+      const onClick = (e) => {
+        const b = e.target.closest("[data-crop]");
+        if (!b) return;
+        e.stopPropagation();
+        const act = b.dataset.crop;
+        if (act === "in") setZoom(view.zoom * 1.25);
+        else if (act === "out") setZoom(view.zoom / 1.25);
+        else if (act === "rotate") { src = rotated(src); reset(); }
+        else if (act === "reset") reset();
+        else finish(act === "use");
+      };
+      const onSlide = () => setZoom(Number(zoomInput.value));
+      const onResize = () => { const z = view.zoom; reset(); setZoom(z); };
+
+      function finish(use) {
+        let result = null;
+        if (use) {
+          const { sx, sy, side } = cropSource(view);
+          const out = Object.assign(document.createElement("canvas"), { width: PHOTO_SIZE, height: PHOTO_SIZE });
+          const g = out.getContext("2d");
+          g.imageSmoothingQuality = "high";
+          g.drawImage(src, sx, sy, side, side, 0, 0, PHOTO_SIZE, PHOTO_SIZE);
+          result = out.toDataURL("image/jpeg", 0.88);
+        }
+        stage.removeEventListener("pointerdown", onDown);
+        stage.removeEventListener("pointermove", onMove);
+        stage.removeEventListener("pointerup", onUp);
+        stage.removeEventListener("pointercancel", onUp);
+        stage.removeEventListener("wheel", onWheel);
+        stage.removeEventListener("keydown", onKey);
+        box.removeEventListener("click", onClick);
+        zoomInput.removeEventListener("input", onSlide);
+        window.removeEventListener("resize", onResize);
+        box.hidden = true;
+        others.forEach((el) => { el.hidden = false; });
+        actionsBar.hidden = false;
+        title.textContent = oldTitle;
+        resolve(result);
+      }
+
+      others.forEach((el) => { el.hidden = true; });
+      actionsBar.hidden = true;
+      title.textContent = "Ajustar foto";
+      box.hidden = false;
+      stage.addEventListener("pointerdown", onDown);
+      stage.addEventListener("pointermove", onMove);
+      stage.addEventListener("pointerup", onUp);
+      stage.addEventListener("pointercancel", onUp);
+      stage.addEventListener("wheel", onWheel, { passive: false });
+      stage.addEventListener("keydown", onKey);
+      box.addEventListener("click", onClick);
+      zoomInput.addEventListener("input", onSlide);
+      window.addEventListener("resize", onResize);
+      reset();
+      stage.focus({ preventScroll: true });
+    });
+  }
+
   function profile() {
     const p = app.state.profile;
-    let color = p.color, photo = p.photo;
+    let color = p.color, photo = p.photo, source = null;
     const face = () => photo ? `<img src="${photo}" alt="Sua foto">` : (p.name.trim().charAt(0).toUpperCase() ? esc(p.name.trim().charAt(0).toUpperCase()) : icon("user"));
     const paint = () => {
       const a = $("#p-avatar");
       a.style.background = color;
       a.innerHTML = face();
       $("#p-nophoto").hidden = !photo;
+      $("#p-adjust").hidden = !(photo && source);
+    };
+    const adjust = async () => {
+      const result = await cropPhoto(source);
+      if (result) photo = result;
+      paint();
     };
     open({
       title: "Seu perfil",
       body: `<div class="pphoto"><span class="avatar xl" id="p-avatar"></span>
           <div class="menu"><button type="button" class="btn" data-act="pick-photo">${icon("image")} Escolher da galeria</button>
+          <button type="button" class="btn" id="p-adjust" data-act="adjust-photo" hidden>${icon("crop")} Ajustar</button>
           <button type="button" class="btn danger" id="p-nophoto" data-act="no-photo">${icon("trash")} Remover foto</button></div>
           <input type="file" id="p-file" accept="image/*" hidden></div>
         <label class="field"><span>Como devo te chamar?</span><input id="p-name" type="text" maxlength="40" value="${esc(p.name)}" placeholder="Seu nome" autocomplete="given-name"></label>
         <div class="field"><span>Cor do avatar (quando não há foto)</span><div class="swatches">${PROFILE_COLORS.map((c) => `<button type="button" class="swatch" data-act="color" data-color="${c}" style="background:${c}" aria-pressed="${c === color}" aria-label="Cor ${c}"></button>`).join("")}</div></div>
-        <p class="hint">O nome e a foto aparecem no topo do app e na tela de bloqueio. Ficam só neste aparelho: não existe conta nem login.</p>`,
+        <p class="hint">O nome e a foto aparecem no topo do app e na tela de bloqueio. Ficam só neste aparelho: não existe conta nem login.</p>
+        <div class="cropper" id="p-crop" hidden>
+          <div class="crop-stage" id="p-stage" tabindex="0" role="application" aria-label="Foto: arraste para posicionar, use + e - para zoom"><canvas id="p-canvas"></canvas><span class="crop-ring" aria-hidden="true"></span></div>
+          <p class="hint crop-hint">Arraste para posicionar e afaste ou junte os dedos para dar zoom. O que fica dentro do círculo vira o seu avatar.</p>
+          <div class="crop-zoom">
+            <button type="button" class="iconbtn" data-crop="out" aria-label="Diminuir zoom">${icon("minus")}</button>
+            <input type="range" id="p-zoom" min="1" max="5" step="0.01" value="1" aria-label="Zoom">
+            <button type="button" class="iconbtn" data-crop="in" aria-label="Aumentar zoom">${icon("plus")}</button>
+          </div>
+          <div class="crop-tools">
+            <button type="button" class="btn" data-crop="rotate">${icon("rotate")} Girar</button>
+            <button type="button" class="btn" data-crop="reset">${icon("repeat")} Recomeçar</button>
+          </div>
+          <div class="sheet-actions"><span class="spacer"></span><button type="button" class="btn" data-crop="cancel">Cancelar</button><button type="button" class="btn primary" data-crop="use">${icon("check")} Usar foto</button></div>
+        </div>`,
       actions: {
         color: (b) => { color = b.dataset.color; panel.querySelectorAll(".swatch").forEach((s) => s.setAttribute("aria-pressed", String(s === b))); paint(); },
         "pick-photo": () => { app.ui.skipRelockUntil = Date.now() + 60_000; $("#p-file").click(); },
+        "adjust-photo": adjust,
         "no-photo": () => { photo = null; paint(); },
       },
       mount: () => {
@@ -105,7 +252,9 @@ export function createPanels(app) {
           const file = e.target.files[0];
           e.target.value = "";
           if (!file) return;
-          try { photo = await shrinkPhoto(file); paint(); } catch { fail("Não consegui abrir essa imagem. Tente outra foto."); }
+          try { source = await loadPhoto(file); } catch { fail("Não consegui abrir essa imagem. Tente outra foto."); return; }
+          $("#panel-error").textContent = "";
+          await adjust();
         });
       },
       submitFn: () => {

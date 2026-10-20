@@ -631,3 +631,23 @@ svg.i.chev { width: 18px; height: 18px; color: var(--muted); }
 .tl-now { display: flex; align-items: center; gap: 8px; margin: 6px 0 12px; color: var(--accent); font-size: 12.5px; font-weight: 800; }
 .tl-now::after { content: ""; flex: 1; height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), transparent); }
 .tl-now svg.i { width: 16px; height: 16px; }
+
+/* ------------------------------------------------------- ajustar foto do perfil */
+.cropper { display: flex; flex-direction: column; gap: 12px; }
+.crop-stage {
+  position: relative; width: min(100%, 320px); aspect-ratio: 1; margin: 0 auto; border-radius: 18px; overflow: hidden;
+  background: #000; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+}
+.crop-stage:active { cursor: grabbing; }
+.crop-stage:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.crop-stage canvas { display: block; width: 100%; height: 100%; }
+.crop-ring {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.58), inset 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+.crop-hint { text-align: center; margin: 0; }
+.crop-zoom { display: flex; align-items: center; gap: 10px; }
+.crop-zoom input[type="range"] { flex: 1; accent-color: var(--accent); height: 28px; }
+.crop-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.crop-tools .btn { margin-top: 0; }
+.cropper .sheet-actions { margin-top: 0; }

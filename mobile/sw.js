@@ -1,7 +1,7 @@
 // Service worker: guarda o app no aparelho para funcionar offline.
 // Ao publicar uma nova versão, troque o número em CACHE (e VERSION em app.js).
 
-const CACHE = "titanium-mobile-2.3.0";
+const CACHE = "titanium-mobile-2.3.1";
 const ASSETS = [
   "./",
   "index.html",

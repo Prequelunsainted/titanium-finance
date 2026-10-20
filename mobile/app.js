@@ -17,7 +17,7 @@ import { badge, categoryMeta, icon, typeMeta } from "./icons.js";
 import { createPanels } from "./panels.js";
 import { createLock } from "./lock.js";
 
-const VERSION = "2.3.0";
+const VERSION = "2.3.1";
 const PAGES = ["Painel", "Meses", "Movimentações", "Orçamentos", "Mais"];
 const TITLES = { Painel: "Visão geral", Meses: "Mês a mês", Movimentações: "Lançamentos", Orçamentos: "Orçamentos", Financiamentos: "Financiamentos", Mais: "Configurações" };
 const THEMES = [["system", "Sistema"], ["light", "Claro"], ["dark", "Escuro"]];

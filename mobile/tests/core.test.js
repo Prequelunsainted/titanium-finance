@@ -10,6 +10,7 @@ import {
 import { PIN_RE, b64ToBytes, bytesToB64, hashPin, lockoutSeconds, verifyPin } from "../security.js";
 import { backupData, defaults, sanitize } from "../store.js";
 import { ICON_NAMES, badge, categoryMeta, icon, typeMeta } from "../icons.js";
+import { CROP_MAX_ZOOM, centerCrop, cropSource, fitCrop, zoomCrop } from "../util.js";
 import { assert, close, deepEqual, equal, report, test, throws } from "./harness.js";
 
 const TODAY = "2026-10-16";
@@ -537,6 +538,34 @@ test("foto do perfil: só imagem embutida e pequena", () => {
     equal(sanitize({ profile: { name: "Ana", photo: bad } }).profile.photo, null, String(bad).slice(0, 30));
   }
   equal(defaults().profile.photo, null);
+});
+
+test("recorte da foto: começa centralizado e cobre o círculo", () => {
+  const v = centerCrop(4000, 3000, 300);
+  close(v.scale, 0.1);
+  close(v.y, 0);
+  close(v.x, -50, "sobra horizontal dividida dos dois lados");
+  const src = cropSource(v);
+  deepEqual([Math.round(src.sx), Math.round(src.sy), Math.round(src.side)], [500, 0, 3000]);
+});
+
+test("recorte da foto: arrastar e dar zoom nunca deixa buraco", () => {
+  const v = centerCrop(1000, 2000, 200);
+  const far = fitCrop({ ...v, x: 500, y: -99999 });
+  deepEqual([far.x, far.y], [0, 200 - 2000 * far.scale], "a imagem para na borda do quadro");
+  equal(fitCrop({ ...v, zoom: 0.2 }).zoom, 1, "não afasta além de cobrir o quadro");
+  equal(fitCrop({ ...v, zoom: 99 }).zoom, CROP_MAX_ZOOM);
+  const z = zoomCrop(v, 2);
+  const a = cropSource(v), b = cropSource(z);
+  close(a.sx + a.side / 2, b.sx + b.side / 2, "o zoom pelo meio mantém o centro");
+  close(a.sy + a.side / 2, b.sy + b.side / 2);
+  close(b.side, a.side / 2);
+  const under = (view, px, py) => [(px - view.x) / view.scale, (py - view.y) / view.scale];
+  const pinch = zoomCrop(v, 3, 50, 120), [ax, ay] = under(fitCrop(v), 50, 120), [bx, by] = under(pinch, 50, 120);
+  close(ax, bx, "o ponto da foto sob os dedos fica parado");
+  close(ay, by);
+  const s = cropSource(zoomCrop(fitCrop({ ...v, x: -40, y: -1300 }), 4.5, 37, 160));
+  assert(s.sx >= -1e-9 && s.sy >= -1e-9 && s.sx + s.side <= 1000 + 1e-6 && s.sy + s.side <= 2000 + 1e-6, "recorte sempre dentro da imagem");
 });
 
 export const outcome = await report();

@@ -75,7 +75,7 @@ Uma movimentação (`state.transactions[]`):
 - Categoria e tipo no formulário e filtros da Lista são **botões `.picker`** que abrem uma grade (`openPicker` em `app.js`); o `<select>` continua no HTML, escondido, como fonte do valor.
 - Mês a mês: faixa `.mrail` de cartões (`monthWindow()` = 2 meses atrás + 12 à frente), resumo `.mhero` (setas `data-mstep`, deslizar), barra empilhada, filtros `data-mfilter`, linha do tempo por dia.
 - Tema em *Configurações* (`settings.theme`: sistema/claro/escuro). Fundo: brilhos radiais em `body::before` (variáveis `--glow*` por tema).
-- Foto do perfil: `profile.photo` = data URL JPEG 256×256 (`shrinkPhoto` em `panels.js`); `sanitize` só aceita `data:image/(jpeg|png|webp);base64` < 600 kB. Entra no backup JSON.
+- Foto do perfil: `profile.photo` = data URL JPEG 256×256. Ao escolher, abre o ajuste (`cropPhoto` em `panels.js`: arrastar, pinça/roda/controle de zoom, girar 90°, máscara redonda); as contas do recorte são puras em `util.js` (`centerCrop`, `fitCrop`, `zoomCrop`, `cropSource`, testadas). A imagem original fica só na memória da folha (botão "Ajustar" até fechar); `sanitize` só aceita `data:image/(jpeg|png|webp);base64` < 600 kB. Entra no backup JSON.
 
 ## Segurança (como foi decidido — seja honesto com o usuário)
 
