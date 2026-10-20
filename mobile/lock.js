@@ -11,6 +11,8 @@ const FAILS_KEY = "titanium.lockfails";
  * Devolve { show, lockNow, enabled }.
  */
 export function createLock(app) {
+  const logo = $("#lock-face img");
+  logo.dataset.logo = logo.getAttribute("src");
   const el = $("#lock"), pinForm = $("#lock-pin-form"), pinInput = $("#lock-pin"), msg = $("#lock-msg"), deviceBtn = $("#lock-device");
   const lockCfg = () => app.state.lock;
   const enabled = () => Boolean(lockCfg().device || lockCfg().pin);
@@ -24,8 +26,11 @@ export function createLock(app) {
     app.ui.locked = true;
     el.hidden = false;
     document.body.classList.add("locked");
-    const name = app.state.profile.name;
+    const { name, photo } = app.state.profile;
     $("#lock-title").textContent = name ? `Olá, ${name}` : "Titanium bloqueado";
+    const face = $("#lock-face img");
+    face.classList.toggle("photo", Boolean(photo));
+    if (photo) face.src = photo; else if (face.dataset.logo) face.src = face.dataset.logo;
     $("#lock-sub").textContent = lockCfg().device ? "Confirme com a senha, digital ou rosto do celular." : "Digite o PIN do app para entrar.";
     deviceBtn.hidden = !lockCfg().device;
     pinForm.hidden = !lockCfg().pin;

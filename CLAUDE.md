@@ -10,7 +10,7 @@ Controle financeiro pessoal, 100% offline e grátis, em duas versões que trocam
 | Versão | Pasta | Tecnologia | Estado |
 |---|---|---|---|
 | **Desktop** | `titanium/` (+ `app.py` atalho) | Python 3.10+, CustomTkinter, SQLite, Matplotlib | Painel, lista, orçamentos, CSV. **Sem** fixo/avulso, mês a mês, financiamentos, tipo/subcategoria, cartão, perfil/bloqueio (pendente, veja Backlog) |
-| **Mobile (PWA)** | `mobile/` | JavaScript puro (ES modules), SVG, localStorage, service worker | Completa (v2.2.0) |
+| **Mobile (PWA)** | `mobile/` | JavaScript puro (ES modules), SVG, localStorage, service worker | Completa (v2.3.0) |
 
 - Repositório: `Prequelunsainted/titanium-finance` (o antigo `Controle-financeiro1.2` foi abandonado: não publique mais lá). Dono: Lucas Gabriel (`Prequelunsainted`).
 - Design no Figma: <https://www.figma.com/design/hYQlEvC2TZuf26hcK3QDy2> (variáveis de cor claro/escuro, componentes). O código usa as mesmas cores (`--accent #2DD4BF` escuro / `#0D9488` claro etc. em `mobile/style.css` e `titanium/app.py`).
@@ -29,6 +29,7 @@ mobile/
 ├── panels.js      # folhas (dialog) auxiliares: perfil, segurança, cartões, tipos, saldo inicial,
 │                  #   personalizar painel, financiamento (com simulação ao vivo)
 ├── charts.js      # gráficos SVG (barras e rosca)
+├── icons.js       # ícones SVG (traço, currentColor) + cor/ícone de cada categoria e tipo (categoryMeta/typeMeta, badge)
 ├── util.js        # $, esc, initialOf, parseSigned
 ├── index.html · style.css · sw.js · manifest.webmanifest · icons/
 └── tests/ (core.test.js + harness.js) · tests.html   # rodam no Node (CI) e no navegador
@@ -47,10 +48,10 @@ python -m titanium adicionar "Mercado" 150,50  # CLI (adicionar|listar|resumo|ex
 # Mobile
 python -m http.server 8000 --directory mobile  # http://localhost:8000  (?demo = dados de exemplo sem salvar)
 cd mobile && npm test                          # testes JS no Node 18+ (o CI roda isto)
-# sem Node na máquina: abra mobile/tests.html no navegador -> título "TODOS OS TESTES PASSARAM" (40 testes)
+# sem Node na máquina: abra mobile/tests.html no navegador -> título "TODOS OS TESTES PASSARAM" (43 testes)
 ```
 
-Parâmetros do modo demo (`?demo&...`): `page=Meses|Financiamentos|Mais|Movimentações|Orçamentos`, `month=2026-11-01`,
+Parâmetros do modo demo (`?demo&...`): `page=Meses|Financiamentos|Mais|Movimentações|Orçamentos` (a aba "Mais" aparece como **Configurações**), `month=2026-11-01`,
 `theme=dark|light`, `nome=Lucas`, `scroll=700`, `sheet[&fixo]`, `panel=perfil|seguranca|cartoes|tipos|personalizar|financiamento`,
 `dash=cartao` (painel só com saldo + limite do cartão), `lock` (mostra a tela de bloqueio).
 
@@ -67,6 +68,14 @@ Uma movimentação (`state.transactions[]`):
 - Painel = lista de widgets (`WIDGETS` em `app.js`); `settings.dashboard {order, visible}` guarda a escolha do usuário; widget novo entra sozinho no lugar padrão (`dashboardLayout`). "Restaurar padrão" limpa a escolha.
 - Backup JSON (`backupData`): tudo **menos** `lock` e ids. CSV: `Data;Descrição;Categoria;Tipo;Valor;Recorrência;Até;Subcategoria;Nome do tipo` (colunas extras opcionais na importação; CSV do desktop sem elas continua valendo).
 - Chave do localStorage: `titanium.mobile.v1`; tentativas de PIN: `titanium.lockfails`.
+
+## Interface (v2.3)
+
+- **Sem emojis**: todo símbolo é SVG de `icons.js` (`icon(nome)`; nome desconhecido cai no ícone genérico). Categoria/tipo novo ganha ícone por palpite (regex) ou genérico, com cor estável por hash.
+- Categoria e tipo no formulário e filtros da Lista são **botões `.picker`** que abrem uma grade (`openPicker` em `app.js`); o `<select>` continua no HTML, escondido, como fonte do valor.
+- Mês a mês: faixa `.mrail` de cartões (`monthWindow()` = 2 meses atrás + 12 à frente), resumo `.mhero` (setas `data-mstep`, deslizar), barra empilhada, filtros `data-mfilter`, linha do tempo por dia.
+- Tema em *Configurações* (`settings.theme`: sistema/claro/escuro). Fundo: brilhos radiais em `body::before` (variáveis `--glow*` por tema).
+- Foto do perfil: `profile.photo` = data URL JPEG 256×256 (`shrinkPhoto` em `panels.js`); `sanitize` só aceita `data:image/(jpeg|png|webp);base64` < 600 kB. Entra no backup JSON.
 
 ## Segurança (como foi decidido — seja honesto com o usuário)
 
@@ -110,5 +119,5 @@ O que elogiam e mantemos: ser gratuito de verdade, ter a maioria das informaçõ
 
 1. **Paridade no desktop** (proposta já criada como tarefa): fixo/avulso, mês a mês, financiamentos, nome do tipo/subcategoria, cartão, saldo do dia, CSV com as colunas novas. Reaproveitar a lógica de `mobile/core.js` portando para `titanium/core.py` + migração SQLite (`ALTER TABLE`).
 2. Testar bloqueio por senha do celular e "compartilhar para o app" em **celular real** (Android Chrome instalado como PWA).
-3. Ideias: mais de um perfil, transferência entre contas, categorias com ícone/cor, metas de economia, gráfico de patrimônio, notificação de vencimento, antecipação de parcelas com desconto de juros.
+3. Ideias: mais de um perfil, transferência entre contas, escolher ícone/cor da categoria à mão, metas de economia, gráfico de patrimônio, notificação de vencimento, antecipação de parcelas com desconto de juros.
 4. Renomear o arquivo do Figma para "Titanium Finance — Hub" (a API não renomeia).

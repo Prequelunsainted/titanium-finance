@@ -93,14 +93,14 @@ Na pasta [`mobile/`](mobile) há uma versão do Titanium para celular, feita com
 ![Titanium no celular](docs/mobile.png)
 
 **Instalar:** abra **<https://prequelunsainted.github.io/titanium-finance/>** no celular e
-- **Android (Chrome):** menu ⋮ → *Instalar app* (ou use o botão **Instalar app** da aba *Mais*);
+- **Android (Chrome):** menu ⋮ → *Instalar app* (ou use o botão **Instalar app** em *Configurações*);
 - **iPhone (Safari):** botão Compartilhar → *Adicionar à Tela de Início*.
 
-Recursos: botão **+** para lançar em segundos (data nativa do celular, categoria padrão por tipo e repetição do tipo e da categoria pela descrição), gráfico de barras com toque no mês, rosca de gastos por categoria, orçamentos com alertas, busca e filtros, tema claro/escuro/sistema e exportação em **CSV** e backup **JSON**.
+Recursos: botão **+** para lançar em segundos (data nativa do celular, categoria padrão por tipo e repetição do tipo e da categoria pela descrição), gráfico de barras com toque no mês, rosca de gastos por categoria, orçamentos com alertas, busca e filtros, ícones e cores próprios para cada categoria e tipo (escolhidos numa grade, sem listas suspensas), tema claro/escuro/sistema escolhido em *Configurações* e exportação em **CSV** e backup **JSON**.
 
 **Fixo todo mês ou só este mês.** Ao lançar uma despesa ou receita, escolha entre *Só este mês* e *↻ Fixo todo mês*. O lançamento fixo é cadastrado uma vez só e se repete sozinho todo mês, no mesmo dia (no último dia do mês, quando o mês é mais curto), até o mês de término que você escolher (opcional). Editar ou excluir um fixo vale para todos os meses.
 
-**Aba Meses (mês a mês).** Mostra, mês por mês, as receitas, as despesas e o saldo previstos, separando **despesas fixas**, **despesas avulsas** e **receitas**, e quanto da renda do mês as despesas fixas comprometem. O seletor de meses é calculado a partir da data de hoje: hoje mostra *Set, Out, Nov, Dez* e, na sequência, *Jan/27, Fev/27…* (vira o ano sozinho, sempre com os próximos 12 meses). O painel também traz um cartão com a previsão do próximo mês.
+**Aba Meses (mês a mês).** No topo, uma faixa de cartões com os meses (do passado recente aos próximos 12, com o ano marcado na virada) mostra em cada um a sobra prevista e uma barrinha de quanto da renda sobra; o mês atual tem a marca *hoje*. Toque num cartão, use as setas ou deslize para o lado. O resumo do mês traz a sobra prevista, entradas e saídas, uma barra que divide a renda entre **fixas**, **parcelas**, **avulsas** e **sobra**, e um aviso quando os compromissos fixos pesam demais. Abaixo, os lançamentos aparecem numa linha do tempo, dia a dia, com filtros (*Entradas, Fixas, Parcelas, Avulsas*) e a marca de onde está o dia de hoje. O painel também traz um cartão com a previsão do próximo mês.
 
 **Financiamentos e parcelamentos.** Cadastre um carro, uma moto, um empréstimo ou uma compra parcelada: o app calcula a tabela de parcelas, os juros e o saldo devedor. Escolha o sistema (**Sem juros**, **Price** com parcela fixa ou **SAC** com parcela decrescente), informe os juros ao mês ou ao ano, e veja uma simulação ao vivo, já comparando Price x SAC. As parcelas entram sozinhas em cada mês (aba Meses), no painel e nos gráficos; dá para ver quanto já foi pago, o que falta e o custo total.
 
@@ -112,7 +112,7 @@ Recursos: botão **+** para lançar em segundos (data nativa do celular, categor
 
 ![Painel personalizado, financiamentos e lançamentos](docs/mobile.png)
 
-**Perfil e bloqueio.** Defina seu nome e a cor do avatar (a saudação aparece no painel). Em *Segurança e bloqueio* ative o desbloqueio com a **senha, digital ou rosto do celular** (usa o próprio sistema do Android/iPhone via WebAuthn: o app nunca vê nem guarda essa senha; precisa abrir o app pelo endereço https) e/ou um **PIN do app**. O app bloqueia ao abrir e ao voltar depois do prazo que você escolher, e espera mais a cada erro de PIN. É uma trava contra quem pega o celular desbloqueado: os dados continuam sem criptografia no navegador, então o que realmente protege é a tela de bloqueio do celular e o seu backup.
+**Perfil e bloqueio.** Defina seu nome e uma **foto da galeria** (reduzida para 256×256 e guardada só no aparelho) ou a cor do avatar; a foto aparece no topo do app e na tela de bloqueio, e tocar nela abre *Configurações*. Em *Segurança e bloqueio* ative o desbloqueio com a **senha, digital ou rosto do celular** (usa o próprio sistema do Android/iPhone via WebAuthn: o app nunca vê nem guarda essa senha; precisa abrir o app pelo endereço https) e/ou um **PIN do app**. O app bloqueia ao abrir e ao voltar depois do prazo que você escolher, e espera mais a cada erro de PIN. É uma trava contra quem pega o celular desbloqueado: os dados continuam sem criptografia no navegador, então o que realmente protege é a tela de bloqueio do celular e o seu backup.
 
 ![Personalizar painel, segurança e tela de bloqueio](docs/mobile-ajustes.png)
 

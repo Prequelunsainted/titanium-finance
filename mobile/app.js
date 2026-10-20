@@ -6,19 +6,20 @@ import {
   CATEGORIES, DEFAULT_CATEGORY, DEFAULT_TYPES, DEMO_BUDGETS, DEMO_CARDS, EXPENSE, FINANCING_SYSTEMS, INCOME, PERIODS,
   ValidationError, addDays, addMonths, budgetStatuses, cardUsage, comparisonLabel, dailyBalances, daysBetween,
   demoTransactions, describeMonth, describePeriod, expandRange, exportCsv, filterTransactions, financingSummary,
-  formatBrl, formatDate, importCsv, makeFinancing, makeTransaction, monthLabel, monthName, monthOverview, monthlySeries,
+  formatBrl, formatCompact, formatDate, importCsv, makeFinancing, makeTransaction, monthLabel, monthName, monthOverview, monthlySeries,
   monthStart, parseAmount, parseBankText, percentChange, periodRange, previousPeriod, round2, signed, sortRecent,
   summarize, todayIso, topCategories, transactionsIn, upcomingMonths,
 } from "./core.js";
 import { backupData, clearAll, defaults, load, save } from "./store.js";
 import { $, esc, initialOf } from "./util.js";
 import { CATEGORY_COLORS, donut, flowChart } from "./charts.js";
+import { badge, categoryMeta, icon, typeMeta } from "./icons.js";
 import { createPanels } from "./panels.js";
 import { createLock } from "./lock.js";
 
-const VERSION = "2.2.0";
+const VERSION = "2.3.0";
 const PAGES = ["Painel", "Meses", "Movimentações", "Orçamentos", "Mais"];
-const TITLES = { Painel: "Visão geral", Meses: "Mês a mês", Movimentações: "Lançamentos", Orçamentos: "Orçamentos", Financiamentos: "Financiamentos", Mais: "Mais" };
+const TITLES = { Painel: "Visão geral", Meses: "Mês a mês", Movimentações: "Lançamentos", Orçamentos: "Orçamentos", Financiamentos: "Financiamentos", Mais: "Configurações" };
 const THEMES = [["system", "Sistema"], ["light", "Claro"], ["dark", "Escuro"]];
 const KIND_FILTERS = [["Todos", null], ["Receitas", INCOME], ["Despesas", EXPENSE]];
 
@@ -30,7 +31,7 @@ const DEMO = params.has("demo");
 
 let state = load();
 const ui = {
-  page: "Painel", kind: "Todos", category: "", type: "", text: "", month: null, monthSel: null,
+  page: "Painel", kind: "Todos", category: "", type: "", text: "", month: null, monthSel: null, mfilter: "all",
   locked: false, skipRelockUntil: 0, warnedStorage: false, installEvent: null,
 };
 let panels, lock;
@@ -152,21 +153,35 @@ function deltaText(now, then, versus, lowerIsBetter = false) {
   return { text: `${short} ${versus}`, short, cls: good ? "good" : "bad" };
 }
 
-function transactionRow(t, today = todayIso(), { tagFuture = true } = {}) {
+const cardNames = () => state.cards.map((c) => c.name);
+const CHEV = icon("chevronRight", "i chev");
+
+/** Avatar do perfil: a foto, a inicial do nome ou o ícone de pessoa. */
+function avatarInner() {
+  const p = state.profile, letter = initialOf(p.name);
+  return p.photo ? `<img src="${p.photo}" alt="">` : letter ? esc(letter) : icon("user");
+}
+
+function typeChip(type) {
+  const m = typeMeta(type, cardNames());
+  return `<span class="mtype" style="--ic:${m.color}">${icon(m.icon)}${esc(type)}</span>`;
+}
+
+function transactionRow(t, today = todayIso(), { tagFuture = true, showDate = true } = {}) {
   const income = t.kind === INCOME, future = t.date > today;
-  const tags = [t.recurring ? "↻ Fixa" : "", t.plan ? `Parcela ${t.installment}/${t.installments}` : "", future && tagFuture ? "previsto" : ""]
+  const tags = [t.recurring ? `${icon("repeat")}Fixa` : "", t.plan ? `Parcela ${t.installment}/${t.installments}` : "", future && tagFuture ? "previsto" : ""]
     .filter(Boolean).map((x) => ` <span class="tag">${x}</span>`).join("");
   const category = `${t.category}${t.subcategory ? ` › ${t.subcategory}` : ""}`;
   return `<button class="item${future ? " proj" : ""}" type="button" data-edit="${t.id}">
-    <span class="ico ${income ? "in" : ""}" aria-hidden="true">${income ? "$" : esc(t.category.charAt(0).toUpperCase())}</span>
-    <span class="txt"><b>${esc(t.description)}</b><small>${esc(category)} · ${formatDate(t.date, { short: true })}${t.type ? ` · ${esc(t.type)}` : ""}${tags}</small></span>
+    ${badge(categoryMeta(t.category), "ico")}
+    <span class="txt"><b>${esc(t.description)}</b><small>${esc(category)}${showDate ? ` · ${formatDate(t.date, { short: true })}` : ""}${t.type ? ` · ${typeChip(t.type)}` : ""}${tags}</small></span>
     <span class="val ${income ? "in" : "out"}">${formatBrl(signed(t), { signed: true })}</span>
   </button>`;
 }
 
 function budgetBar(s) {
   return `<div class="budget-line" style="margin-top:12px">
-    <div class="budget-top"><b>${esc(s.category)}</b>
+    <div class="budget-top"><span class="bname">${badge(categoryMeta(s.category), "ibadge sm")}<b>${esc(s.category)}</b></span>
       <small class="${s.level}">${formatBrl(s.spent, { cents: false })} de ${formatBrl(s.limit, { cents: false })} · ${Math.round(s.ratio * 100)}%</small></div>
     <div class="meter" role="meter" aria-label="${esc(s.category)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(Math.min(s.ratio, 1) * 100)}"><i class="${s.level}" style="width:${Math.min(s.ratio, 1) * 100}%"></i></div></div>`;
 }
@@ -188,9 +203,9 @@ function wSaldo(c) {
 
 function wResumo(c) {
   return `<div class="grid2">
-    <section class="card"><div class="kpi-top"><span class="badge in" aria-hidden="true">↑</span><span class="label">Receitas</span></div>
+    <section class="card"><div class="kpi-top">${badge({ icon: "arrowUp", color: "#34D399" }, "ibadge sm")}<span class="label">Receitas</span></div>
       <div class="mid">${formatBrl(c.s.income)}</div><div class="delta ${c.dInc.cls}">${esc(c.dInc.short)}</div></section>
-    <section class="card"><div class="kpi-top"><span class="badge out" aria-hidden="true">↓</span><span class="label">Despesas</span></div>
+    <section class="card"><div class="kpi-top">${badge({ icon: "arrowDown", color: "#F87171" }, "ibadge sm")}<span class="label">Despesas</span></div>
       <div class="mid">${formatBrl(c.s.expense)}</div><div class="delta ${c.dExp.cls}">${esc(c.dExp.short)}</div></section>
   </div>`;
 }
@@ -225,7 +240,7 @@ function wProximo(c) {
   const next = addMonths(monthStart(c.today), 1), o = monthOverview(state.transactions, next, c.today);
   return `<section class="card">
     <div class="card-head"><div><h2>Próximo mês · ${esc(describeMonth(next).split(" de ")[0])}</h2><p class="sub">Previsão com seus fixos e parcelas</p></div>
-      <button class="link" type="button" data-msel="${next}">Detalhar →</button></div>
+      <button class="link" type="button" data-msel="${next}">Detalhar ${icon("chevronRight")}</button></div>
     <div class="trio">
       <div><span class="label">Receitas</span><b class="in">${formatBrl(o.income, { cents: false })}</b></div>
       <div><span class="label">Despesas</span><b class="out">${formatBrl(o.expense, { cents: false })}</b></div>
@@ -236,7 +251,7 @@ function wProximo(c) {
 function wFinanciamentos(c) {
   const fins = state.transactions.filter((t) => t.plan).map((t) => ({ t, s: financingSummary(t, c.today) })).filter((x) => !x.s.done);
   return `<section class="card">
-    <div class="card-head"><div><h2>Financiamentos</h2><p class="sub">${fins.length ? `${fins.length} em andamento` : "Nenhum em andamento"}</p></div><button class="link" type="button" data-page="Financiamentos">Ver todos →</button></div>
+    <div class="card-head"><div><h2>Financiamentos</h2><p class="sub">${fins.length ? `${fins.length} em andamento` : "Nenhum em andamento"}</p></div><button class="link" type="button" data-page="Financiamentos">Ver todos ${icon("chevronRight")}</button></div>
     ${fins.length ? fins.slice(0, 3).map(({ t, s }) => `<div class="cardu"><div class="budget-top"><b>${esc(t.description)}</b><small>${s.paidCount}/${s.count} pagas</small></div>
       <div class="meter" aria-hidden="true"><i style="width:${s.progress * 100}%"></i></div>
       <p class="hint">${s.next ? `Próxima: ${formatBrl(s.next.payment)} em ${formatDate(s.next.date, { short: true })} · ` : ""}saldo devedor ${formatBrl(s.balance, { cents: false })}</p></div>`).join("")
@@ -276,7 +291,7 @@ function wCategorias(c) {
 function wRecentes(c) {
   const recent = sortRecent(c.items).slice(0, 4);
   return `<section class="card">
-    <div class="card-head"><h2>Movimentações recentes</h2><button class="link" type="button" data-page="Movimentações">Ver todas →</button></div>
+    <div class="card-head"><h2>Movimentações recentes</h2><button class="link" type="button" data-page="Movimentações">Ver todas ${icon("chevronRight")}</button></div>
     ${recent.length ? `<div class="list">${recent.map((t) => transactionRow(t)).join("")}</div>` : `<p class="empty">Nenhuma movimentação neste período.</p>`}
   </section>`;
 }
@@ -318,7 +333,7 @@ function renderDashboard() {
       <p class="hint">Seus dados ficam só neste aparelho. Um backup leva um toque e evita perder tudo se o celular for trocado ou formatado.</p>
       <div class="menu"><button class="btn primary" type="button" data-action="export-json">Salvar backup agora</button><button class="btn" type="button" data-action="backup-later">Lembrar em 7 dias</button></div></section>` : ""}
     ${visible.length ? visible.map((w) => w.render(c)).join("") : `<section class="card empty"><p>Todos os blocos estão escondidos.</p></section>`}
-    <div class="menu"><button class="btn" type="button" data-action="customize">⚙ Personalizar painel</button></div>`;
+    <div class="menu"><button class="btn" type="button" data-action="customize">${icon("layout")} Personalizar painel</button></div>`;
 }
 
 // ------------------------------------------------------------- movimentações
@@ -332,8 +347,8 @@ function renderTransactions() {
       <input id="search" type="search" placeholder="Buscar descrição, categoria ou tipo…" value="${esc(ui.text)}" autocomplete="off" aria-label="Buscar">
       <div class="seg" id="kinds" role="group" aria-label="Tipo">${KIND_FILTERS.map(([label]) => `<button type="button" data-kind="${label}" aria-pressed="${ui.kind === label}">${label}</button>`).join("")}</div>
       <div class="row">
-        <select id="cat-filter" aria-label="Categoria"><option value="">Categorias</option>${cats.map((c) => `<option ${c === ui.category ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
-        <select id="type-filter" aria-label="Nome do tipo"><option value="">Tipos</option>${types.map((t) => `<option ${t === ui.type ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+        <button type="button" class="picker" data-pick="cat-filter" aria-label="Filtrar por categoria">${ui.category ? badge(categoryMeta(ui.category), "ibadge sm") : `<span class="ibadge sm" style="--ic:#94A3B8">${icon("layout")}</span>`}<span>${esc(ui.category || "Categorias")}</span>${CHEV}</button>
+        <button type="button" class="picker" data-pick="type-filter" aria-label="Filtrar por nome do tipo">${ui.type ? badge(typeMeta(ui.type, cardNames()), "ibadge sm") : `<span class="ibadge sm" style="--ic:#94A3B8">${icon("tag")}</span>`}<span>${esc(ui.type || "Tipos")}</span>${CHEV}</button>
       </div>
     </div>
     <div id="list"></div>
@@ -369,42 +384,105 @@ function updateList() {
 
 // ------------------------------------------------------------------ mês a mês
 
-function renderMonths() {
-  const today = todayIso(), current = monthStart(today), months = upcomingMonths(today, 1, 12);
-  if (!months.includes(ui.monthSel)) ui.monthSel = current;
-  const m = ui.monthSel, o = monthOverview(state.transactions, m, today);
-  const status = { futuro: "Previsto", atual: "Em andamento", passado: "Encerrado" }[o.status];
+const WEEKDAYS = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+const weekday = (iso) => WEEKDAYS[new Date(`${iso}T12:00:00Z`).getUTCDay()];
+const MONTH_FILTERS = [
+  ["all", "Tudo", () => true],
+  ["receitas", "Entradas", (t) => t.kind === INCOME],
+  ["fixas", "Fixas", (t) => t.kind === EXPENSE && t.recurring],
+  ["parcelas", "Parcelas", (t) => t.kind === EXPENSE && t.plan],
+  ["avulsas", "Avulsas", (t) => t.kind === EXPENSE && !t.recurring && !t.plan],
+];
+// Os meses do seletor: 2 para trás e 12 para frente, sempre contados a partir de hoje (vira o ano sozinho).
+const monthWindow = () => upcomingMonths(todayIso(), 2, 12);
 
-  const strip = months.map((iso) => {
-    const newYear = iso.slice(5, 7) === "01" && iso !== months[0];
-    return `<button type="button" class="mchip${iso === current ? " now" : ""}${newYear ? " year" : ""}" data-msel="${iso}" aria-pressed="${iso === m}" aria-label="${esc(describeMonth(iso))}">${monthLabel(iso, today)}</button>`;
+function renderMonths() {
+  const today = todayIso(), current = monthStart(today), months = monthWindow();
+  if (!months.includes(ui.monthSel)) ui.monthSel = current;
+  const views = months.map((m) => monthOverview(state.transactions, m, today));
+  const maxAbs = Math.max(1, ...views.map((v) => Math.abs(v.balance)));
+  const idx = months.indexOf(ui.monthSel), m = ui.monthSel, o = views[idx];
+
+  // Trilho de meses: cada cartão mostra o saldo previsto e uma barrinha do tamanho dele.
+  const rail = views.map((v, i) => {
+    const iso = months[i], has = v.items.length > 0;
+    const yearSep = i > 0 && iso.slice(5, 7) === "01" ? `<div class="myear" aria-hidden="true"><span>${iso.slice(0, 4)}</span></div>` : "";
+    const h = has ? Math.max(10, Math.round((Math.abs(v.balance) / maxAbs) * 100)) : 0;
+    return `${yearSep}<button type="button" class="mcard ${v.status}" data-msel="${iso}" aria-pressed="${iso === m}" aria-label="${esc(describeMonth(iso))}${has ? `, saldo ${formatBrl(v.balance)}` : ", sem lançamentos"}">
+      <span class="mc-m">${monthName(iso).slice(0, 3)}</span>
+      <span class="mc-bar"><i class="${v.balance < 0 ? "neg" : ""}" style="height:${h}%"></i></span>
+      <span class="mc-v ${v.balance < 0 ? "neg" : ""}">${has ? `${v.balance < 0 ? "−" : "+"}${formatCompact(v.balance, { currency: false })}` : "—"}</span>
+      ${iso === current ? `<span class="mc-now">hoje</span>` : ""}
+    </button>`;
   }).join("");
 
-  const expenses = o.items.filter((t) => t.kind === EXPENSE);
-  const plans = expenses.filter((t) => t.plan), fixed = expenses.filter((t) => t.recurring), oneOff = expenses.filter((t) => !t.recurring && !t.plan);
-  const incomes = o.items.filter((t) => t.kind === INCOME);
-  const group = (title, total, rows, cls) => rows.length
-    ? `<section class="card"><div class="card-head"><h2>${title}</h2><b class="${cls}">${formatBrl(total)}</b></div><div class="list">${rows.map((t) => transactionRow(t, today, { tagFuture: o.status !== "futuro" })).join("")}</div></section>` : "";
-  const level = o.commitment === null ? "" : o.commitment > 1 ? "estourado" : o.commitment >= 0.7 ? "alerta" : "";
+  const status = { futuro: "Previsto", atual: "Em andamento", passado: "Encerrado" }[o.status];
+  const balanceLabel = { futuro: "Sobra prevista", atual: "Sobra prevista no mês", passado: "Sobrou no mês" }[o.status];
+  const base = Math.max(o.income, o.expense, 1);
+  const segments = [
+    ["Fixas", o.fixedExpense, "#A78BFA"],
+    ["Parcelas", o.installmentExpense, "#60A5FA"],
+    ["Avulsas", o.oneOffExpense, "#F59E0B"],
+    ["Sobra", Math.max(0, o.balance), "var(--income)"],
+  ].filter(([, v]) => v > 0);
+  const stack = segments.map(([l, v, c]) => `<i style="width:${(v / base) * 100}%;background:${c}" title="${l}"></i>`).join("");
+  const legend = segments.map(([l, v, c]) => `<li><i style="background:${c}"></i><span>${l}</span><b>${formatBrl(v, { cents: false })}</b>${o.income ? `<small>${Math.round((v / o.income) * 100)}%</small>` : ""}</li>`).join("");
+  const advice = !o.items.length ? ""
+    : o.expense > o.income ? `<p class="malert bad">${icon("alert")}<span>As saídas passam as entradas em <b>${formatBrl(o.expense - o.income)}</b>.</span></p>`
+    : o.commitment !== null && o.commitment >= 0.7 ? `<p class="malert warn">${icon("alert")}<span>Fixas e parcelas já usam <b>${Math.round(o.commitment * 100)}%</b> da renda do mês.</span></p>`
+    : o.income ? `<p class="malert ok">${icon("check")}<span>Fixas e parcelas usam <b>${Math.round((o.commitment ?? 0) * 100)}%</b> da renda: sobra espaço.</span></p>` : "";
+
+  // Linha do tempo do mês, dia a dia, com filtro por natureza do lançamento.
+  if (!MONTH_FILTERS.some(([k]) => k === ui.mfilter)) ui.mfilter = "all";
+  const chips = MONTH_FILTERS.map(([k, label, fn]) => {
+    const n = o.items.filter(fn).length;
+    return n || k === "all" ? `<button type="button" class="fchip" data-mfilter="${k}" aria-pressed="${ui.mfilter === k}">${label}<span>${n}</span></button>` : "";
+  }).join("");
+  const rows = o.items.filter(MONTH_FILTERS.find(([k]) => k === ui.mfilter)[2]);
+  const byDay = new Map();
+  for (const t of rows) byDay.set(t.date, [...(byDay.get(t.date) ?? []), t]);
+  let timeline = "", nowShown = false;
+  for (const [date, items] of byDay) {
+    if (o.status === "atual" && !nowShown && date > today) {
+      timeline += `<div class="tl-now">${icon("clock")}<span>Hoje, ${Number(today.slice(8))} de ${monthName(today)}</span></div>`;
+      nowShown = true;
+    }
+    const net = items.reduce((a, t) => a + signed(t), 0);
+    timeline += `<div class="tl-day${date < today ? " past" : ""}${date === today ? " today" : ""}">
+        <span class="tl-date"><b>${Number(date.slice(8))}</b><small>${weekday(date).slice(0, 3)}</small></span>
+        <div class="tl-items">${items.map((t) => transactionRow(t, today, { tagFuture: o.status === "atual", showDate: false })).join("")}</div>
+      </div>${items.length > 1 ? `<p class="tl-sum">${weekday(date)}: ${formatBrl(net, { signed: true })}</p>` : ""}`;
+  }
 
   return `
-    <div class="month-strip" id="strip" role="group" aria-label="Escolha o mês">${strip}</div>
-    <section class="card">
-      <div class="card-head"><div><h2>${esc(describeMonth(m))}</h2><p class="sub">${o.status === "futuro" ? "Só o que já está cadastrado" : o.status === "atual" ? "Realizado e previsto até o fim do mês" : "Tudo o que caiu no mês"}</p></div><span class="pill ${o.status}">${status}</span></div>
-      <div class="trio">
-        <div><span class="label">Receitas</span><b class="in">${formatBrl(o.income, { cents: false })}</b></div>
-        <div><span class="label">Despesas</span><b class="out">${formatBrl(o.expense, { cents: false })}</b></div>
-        <div><span class="label">Saldo</span><b class="${o.balance < 0 ? "out" : ""}">${formatBrl(o.balance, { cents: false })}</b></div>
+    <div class="mrail" id="strip" role="group" aria-label="Escolha o mês">${rail}</div>
+    <section class="card mhero" id="mhero">
+      <div class="mh-top">
+        <button type="button" class="iconbtn" data-mstep="-1" ${idx === 0 ? "disabled" : ""} aria-label="Mês anterior">${icon("chevronLeft")}</button>
+        <div class="mh-title"><h2>${esc(describeMonth(m).split(" de ")[0])}</h2><span>${m.slice(0, 4)} · <span class="pill ${o.status}">${status}</span></span></div>
+        <button type="button" class="iconbtn" data-mstep="1" ${idx === months.length - 1 ? "disabled" : ""} aria-label="Próximo mês">${icon("chevronRight")}</button>
       </div>
-      ${o.commitment === null ? "" : `<p class="commit">Fixas e parcelas: <b>${formatBrl(o.committed, { cents: false })}</b> · ${Math.round(o.commitment * 100)}% da receita do mês</p>
-        <div class="meter" aria-hidden="true"><i class="${level}" style="width:${Math.min(o.commitment, 1) * 100}%"></i></div>`}
+      ${o.items.length ? `
+      <div class="mh-balance"><span class="label">${balanceLabel}</span><b class="big ${o.balance < 0 ? "neg" : ""}">${formatBrl(o.balance)}</b></div>
+      <div class="mh-io">
+        <div>${badge({ icon: "arrowUp", color: "#34D399" }, "ibadge sm")}<span><small>Entradas</small><b class="in">${formatBrl(o.income, { cents: false })}</b></span></div>
+        <div>${badge({ icon: "arrowDown", color: "#F87171" }, "ibadge sm")}<span><small>Saídas</small><b class="out">${formatBrl(o.expense, { cents: false })}</b></span></div>
+      </div>
+      <div class="stack" role="img" aria-label="Para onde vai o dinheiro do mês">${stack}</div>
+      <ul class="stack-legend">${legend}</ul>
+      ${advice}`
+      : `<div class="mempty">${icon("calendar")}<p>Nada lançado em ${esc(monthName(m))} ainda.</p><small>Lançamentos fixos e financiamentos aparecem aqui sozinhos, mês a mês.</small></div>`}
     </section>
-    ${group("Financiamentos e parcelas", o.installmentExpense, plans, "out")}
-    ${group("Despesas fixas", o.fixedExpense, fixed, "out")}
-    ${group("Despesas avulsas", o.oneOffExpense, oneOff, "out")}
-    ${group("Receitas", o.income, incomes, "in")}
-    ${o.items.length ? "" : `<section class="card empty"><p>Nada lançado em ${esc(describeMonth(m).toLowerCase())}.</p><p class="hint">Cadastre uma despesa ou receita como <b>Fixo todo mês</b>, ou um financiamento, e ela já aparece em todos os meses seguintes.</p></section>`}
-    <div class="menu"><button class="btn primary" type="button" data-action="new">+ Lançar em ${esc(monthName(m))}</button></div>`;
+    ${o.items.length ? `<div class="fchips" role="group" aria-label="Filtrar o mês">${chips}</div>
+    <div class="timeline">${timeline || `<p class="empty">Nada nesse filtro.</p>`}</div>` : ""}
+    <div class="menu"><button class="btn primary" type="button" data-action="new">${icon("plus")} Lançar em ${esc(monthName(m))}</button></div>`;
+}
+
+function stepMonth(step) {
+  const months = monthWindow(), i = months.indexOf(ui.monthSel) + step;
+  if (i < 0 || i >= months.length) return;
+  ui.monthSel = months[i];
+  render({ keepScroll: true });
 }
 
 function centerSelectedMonth() {
@@ -432,7 +510,7 @@ function renderBudgets() {
       const s = statuses.get(name);
       const detail = s ? (s.level === "estourado" ? `Passou ${formatBrl(-s.remaining)} do limite` : `Restam ${formatBrl(s.remaining)} · ${Math.round(s.ratio * 100)}% usado`) : `Gasto no mês: ${formatBrl(spent.get(name) ?? 0)}`;
       return `<section class="card budget">
-        <div class="budget-top"><div><b>${esc(name)}</b><small class="${s ? s.level : ""}">${detail}</small></div>
+        <div class="budget-top"><div class="bname">${badge(categoryMeta(name), "ibadge")}<div><b>${esc(name)}</b><small class="${s ? s.level : ""}">${detail}</small></div></div>
           <label class="money-input">R$ <input type="text" inputmode="decimal" placeholder="Sem limite" data-budget="${esc(name)}" value="${s ? s.limit.toFixed(2).replace(".", ",") : ""}" aria-label="Limite mensal de ${esc(name)}" enterkeyhint="done"></label></div>
         <div class="meter" aria-hidden="true"><i class="${s ? s.level : ""}" style="width:${s ? Math.min(s.ratio, 1) * 100 : 0}%"></i></div>
       </section>`;
@@ -461,7 +539,7 @@ function renderFinancings() {
   const owed = round2(open.reduce((a, x) => a + x.s.balance, 0));
   const thisMonth = monthOverview(state.transactions, monthStart(today), today).installmentExpense;
   return `
-    <button class="link back" type="button" data-page="Mais">← Mais</button>
+    <button class="link back" type="button" data-page="Mais">${icon("chevronLeft")} Configurações</button>
     <section class="card">
       <div class="trio">
         <div><span class="label">Em andamento</span><b>${open.length}</b></div>
@@ -471,7 +549,7 @@ function renderFinancings() {
       <p class="hint">As parcelas entram sozinhas em cada mês (veja na aba Meses) e nos gráficos do painel.</p>
     </section>
     ${items.length ? items.map(({ t, s }) => `<section class="card fin">
-      <div class="card-head"><div><h2>${esc(t.description)}</h2><p class="sub">${esc(FINANCING_SYSTEMS[t.plan.system])} · ${t.plan.count}x${t.plan.rate ? ` · ${String(t.plan.rate).replace(".", ",")}% a.m.` : ""}</p></div>
+      <div class="card-head"><div class="bname">${badge(categoryMeta(t.category === "Financiamento" ? "Financiamento" : t.category))}<div><h2>${esc(t.description)}</h2><p class="sub">${esc(FINANCING_SYSTEMS[t.plan.system])} · ${t.plan.count}x${t.plan.rate ? ` · ${String(t.plan.rate).replace(".", ",")}% a.m.` : ""}</p></div></div>
         <button class="link" type="button" data-fin-edit="${t.id}">Editar</button></div>
       <div class="budget-top"><b>${s.paidCount} de ${s.count} pagas</b><small>${Math.round(s.progress * 100)}%</small></div>
       <div class="meter" role="meter" aria-label="Progresso de ${esc(t.description)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(s.progress * 100)}"><i style="width:${s.progress * 100}%"></i></div>
@@ -498,38 +576,44 @@ function renderMore() {
   const installed = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
   const p = state.profile, l = state.lock, fins = state.transactions.filter((t) => t.plan).length;
   const lockText = l.device || l.pin ? [l.device && "senha do celular", l.pin && "PIN"].filter(Boolean).join(" + ") : "desativado";
-  const row = (action, icon, title, sub) => `<button type="button" class="row-btn" data-action="${action}"><span class="row-ico" aria-hidden="true">${icon}</span><span class="row-txt"><b>${title}</b><small>${sub}</small></span><span class="chev" aria-hidden="true">›</span></button>`;
+  const row = (action, ic, color, title, sub) => `<button type="button" class="row-btn" data-action="${action}">${badge({ icon: ic, color })}<span class="row-txt"><b>${title}</b><small>${sub}</small></span>${CHEV}</button>`;
+  const themeIcon = { system: "monitor", light: "sun", dark: "moon" };
   return `
-    <section class="card rows">
-      ${row("profile", "👤", "Seu perfil", p.name ? esc(p.name) : "Defina seu nome")}
-      ${row("security", "🔒", "Segurança e bloqueio", `Bloqueio: ${lockText}`)}
-      ${row("cards", "💳", "Cartões de crédito", state.cards.length ? `${state.cards.length} cadastrado${state.cards.length > 1 ? "s" : ""}` : "Controle o limite")}
-      ${row("types", "🏷", "Tipos de lançamento", "Pix, boleto, cartão e os seus")}
-      ${row("financing", "🏦", "Financiamentos", fins ? `${fins} cadastrado${fins > 1 ? "s" : ""}` : "Parcelas, juros e saldo devedor")}
-      ${row("customize", "🧩", "Personalizar painel", "Escolha e ordene os blocos")}
-      ${row("opening", "⚖", "Saldo inicial", state.settings.openingBalance ? formatBrl(state.settings.openingBalance) : "Para o saldo do dia bater com o banco")}
+    <section class="card">
+      <button type="button" class="profile-card" data-action="profile">
+        <span class="avatar lg" style="background:${p.color}">${avatarInner()}</span>
+        <span class="row-txt"><b>${p.name ? esc(p.name) : "Seu perfil"}</b><small>${p.photo || p.name ? "Editar nome e foto" : "Defina seu nome e uma foto da galeria"}</small></span>${CHEV}
+      </button>
     </section>
     <section class="card"><h2>Aparência</h2>
-      <div class="seg" style="margin-top:10px" role="group" aria-label="Tema">${THEMES.map(([value, label]) => `<button type="button" data-theme="${value}" aria-pressed="${state.settings.theme === value}">${label}</button>`).join("")}</div>
+      <div class="themes" role="group" aria-label="Tema">${THEMES.map(([value, label]) => `<button type="button" data-theme="${value}" aria-pressed="${state.settings.theme === value}">${icon(themeIcon[value])}<span>${label}</span></button>`).join("")}</div>
+    </section>
+    <section class="card rows">
+      ${row("security", "lock", "#F472B6", "Segurança e bloqueio", `Bloqueio: ${lockText}`)}
+      ${row("cards", "card", "#60A5FA", "Cartões de crédito", state.cards.length ? `${state.cards.length} cadastrado${state.cards.length > 1 ? "s" : ""}` : "Controle o limite")}
+      ${row("types", "tag", "#F59E0B", "Tipos de lançamento", "Pix, boleto, cartão e os seus")}
+      ${row("financing", "bank", "#818CF8", "Financiamentos", fins ? `${fins} cadastrado${fins > 1 ? "s" : ""}` : "Parcelas, juros e saldo devedor")}
+      ${row("customize", "layout", "#2DD4BF", "Personalizar painel", "Escolha e ordene os blocos")}
+      ${row("opening", "scale", "#A78BFA", "Saldo inicial", state.settings.openingBalance ? formatBrl(state.settings.openingBalance) : "Para o saldo do dia bater com o banco")}
     </section>
     <section class="card"><h2>Seus dados</h2>
       <div class="menu" style="margin-top:10px">
-        <button class="btn" data-action="export-csv">Exportar planilha (CSV)</button>
-        <button class="btn" data-action="export-json">Salvar backup (JSON)</button>
-        <button class="btn" data-action="import">Importar CSV ou backup</button>
+        <button class="btn" data-action="export-csv">${icon("download")} Exportar planilha (CSV)</button>
+        <button class="btn" data-action="export-json">${icon("download")} Salvar backup (JSON)</button>
+        <button class="btn" data-action="import">${icon("upload")} Importar CSV ou backup</button>
       </div>
       <p class="hint">${state.settings.lastBackup ? `Último backup: ${formatDate(state.settings.lastBackup)}. ` : "Você ainda não salvou um backup. "}O CSV é o mesmo do app de computador.</p>
     </section>
     <section class="card"><h2>Instalar no celular</h2>
-      ${installed ? `<p class="hint">O Titanium já está instalado neste aparelho. ✓</p>`
-        : ui.installEvent ? `<div class="menu" style="margin-top:10px"><button class="btn primary" data-action="install">Instalar app</button></div>`
+      ${installed ? `<p class="hint ok">${icon("check")} O Titanium já está instalado neste aparelho.</p>`
+        : ui.installEvent ? `<div class="menu" style="margin-top:10px"><button class="btn primary" data-action="install">${icon("phone")} Instalar app</button></div>`
         : iosHint ? `<p class="hint">No iPhone: toque em Compartilhar e depois em <b>Adicionar à Tela de Início</b>.</p>`
         : `<p class="hint">No Chrome: menu ⋮ → <b>Instalar app</b>. O Titanium funciona offline depois de aberto uma vez. Instalado, ele também aparece no menu <b>Compartilhar</b> do celular: compartilhe a notificação de um Pix com o Titanium e ele monta o lançamento.</p>`}
     </section>
     <section class="card"><h2>Zona de cuidado</h2>
       <div class="menu" style="margin-top:10px">
-        <button class="btn" data-action="demo">Carregar dados de exemplo</button>
-        <button class="btn danger" data-action="wipe">Apagar lançamentos, cartões e orçamentos</button>
+        <button class="btn" data-action="demo">${icon("sparkle")} Carregar dados de exemplo</button>
+        <button class="btn danger" data-action="wipe">${icon("trash")} Apagar lançamentos, cartões e orçamentos</button>
       </div>
     </section>
     <p class="about">Titanium Finance v${VERSION}<br>Grátis, sem anúncios, sem limite de lançamentos e sem assinatura.<br>${DEMO ? "Modo demonstração: nada é salvo." : `${state.transactions.length} movimentações · tudo guardado só neste aparelho.`}</p>`;
@@ -604,6 +688,7 @@ function fillCategories(selected) {
   $("#f-category").innerHTML = cats.map((c) => `<option ${c === selected ? "selected" : ""}>${esc(c)}</option>`).join("") + `<option value="__new__">＋ Nova categoria…</option>`;
   $("#f-new-wrap").hidden = true;
   fillSubcategories(selected);
+  syncPickers();
 }
 
 function fillSubcategories(category) {
@@ -615,6 +700,47 @@ function fillTypes(selected) {
   if (selected && !types.includes(selected)) types.push(selected);
   $("#f-type").innerHTML = `<option value="">— sem nome —</option>${types.map((t) => `<option ${t === selected ? "selected" : ""}>${esc(t)}</option>`).join("")}<option value="__new__">＋ Novo tipo…</option>`;
   $("#f-type-new-wrap").hidden = true;
+  syncPickers();
+}
+
+const GREY = "#94A3B8";
+
+/** Os botões que mostram categoria e tipo escolhidos (com ícone), no lugar das listas do sistema. */
+function syncPickers() {
+  const c = $("#f-category").value, t = $("#f-type").value;
+  $("#f-category-btn").innerHTML = c === "__new__"
+    ? `<span class="ibadge sm" style="--ic:${GREY}">${icon("plus")}</span><span>Nova categoria</span>${CHEV}`
+    : `${badge(categoryMeta(c), "ibadge sm")}<span>${esc(c)}</span>${CHEV}`;
+  $("#f-type-btn").innerHTML = t && t !== "__new__"
+    ? `${badge(typeMeta(t, cardNames()), "ibadge sm")}<span>${esc(t)}</span>${CHEV}`
+    : `<span class="ibadge sm" style="--ic:${GREY}">${icon(t === "__new__" ? "plus" : "tag")}</span><span>${t === "__new__" ? "Novo tipo" : "Nenhum"}</span>${CHEV}`;
+}
+
+function setSelect(selector, value) {
+  const el = $(selector);
+  el.value = value;
+  el.dispatchEvent(new Event("change"));
+  syncPickers();
+}
+
+/** Grade de opções com ícone, numa folha. */
+function openPicker(which) {
+  const cats = allCategories(), types = allTypes(), cards = cardNames();
+  const catOpts = cats.map((c) => ({ value: c, label: c, meta: categoryMeta(c) }));
+  const typeOpts = types.map((t) => ({ value: t, label: t, meta: typeMeta(t, cards) }));
+  const extra = (value, label, ic) => ({ value, label, meta: { icon: ic, color: GREY } });
+  const conf = {
+    category: { title: "Categoria", options: [...catOpts, extra("__new__", "Nova categoria", "plus")], current: $("#f-category").value, pick: (v) => setSelect("#f-category", v) },
+    type: { title: "Nome do tipo", options: [extra("", "Nenhum", "dots"), ...typeOpts, extra("__new__", "Novo tipo", "plus")], current: $("#f-type").value, pick: (v) => setSelect("#f-type", v) },
+    "cat-filter": { title: "Filtrar por categoria", options: [extra("", "Todas", "layout"), ...catOpts], current: ui.category, pick: (v) => { ui.category = v; render({ keepScroll: true }); } },
+    "type-filter": { title: "Filtrar por nome do tipo", options: [extra("", "Todos", "tag"), ...typeOpts], current: ui.type, pick: (v) => { ui.type = v; render({ keepScroll: true }); } },
+  }[which];
+  if (!conf) return;
+  panels.open({
+    title: conf.title,
+    body: `<div class="pgrid">${conf.options.map((o) => `<button type="button" class="ptile" data-act="pick" data-value="${esc(o.value)}" aria-pressed="${o.value === conf.current}">${badge(o.meta)}<span>${esc(o.label)}</span></button>`).join("")}</div>`,
+    actions: { pick: (b) => { panels.close(); conf.pick(b.dataset.value); } },
+  });
 }
 
 /** Data dentro do mês escolhido: hoje, se for o mês atual; senão o mesmo dia de hoje (ou o último dia do mês). */
@@ -769,10 +895,15 @@ document.querySelectorAll("[data-date]").forEach((chip) => chip.addEventListener
 // ---------------------------------------------------------------- navegação
 
 function updateAvatar() {
-  const avatar = $("#avatar"), p = state.profile, letter = initialOf(p.name);
+  const avatar = $("#avatar"), p = state.profile;
   avatar.style.background = p.color;
-  avatar.innerHTML = letter ? esc(letter) : `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.5-6 8-6s7 1.5 8 6"/></svg>`;
-  avatar.setAttribute("aria-label", p.name ? `Perfil de ${p.name}` : "Perfil");
+  avatar.innerHTML = avatarInner();
+  avatar.setAttribute("aria-label", p.name ? `Configurações de ${p.name}` : "Configurações");
+}
+
+/** Troca cada <span data-icon="nome"> pelo SVG do ícone (barra de abas, formulário…). */
+function hydrateIcons(root = document) {
+  root.querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
 }
 
 function render({ keepScroll = false } = {}) {
@@ -784,7 +915,7 @@ function render({ keepScroll = false } = {}) {
     Movimentações: `${describePeriod(period())} · toque para editar`,
     Orçamentos: `Limites mensais · ${monthName(today)} de ${today.slice(0, 4)}`,
     Financiamentos: "Parcelas, juros e saldo devedor",
-    Mais: "Perfil, segurança, dados e ajustes",
+    Mais: "Perfil, aparência, segurança e dados",
   }[page];
   updateAvatar();
 
@@ -864,6 +995,9 @@ document.addEventListener("click", (event) => {
   const d = el.dataset;
   if (d.msel) { ui.monthSel = d.msel; return ui.page === "Meses" ? render({ keepScroll: true }) : go("Meses"); }
   if (d.page) return go(d.page);
+  if (d.pick) return openPicker(d.pick);
+  if (d.mstep) return stepMonth(Number(d.mstep));
+  if (d.mfilter) { ui.mfilter = d.mfilter; return render({ keepScroll: true }); }
   if (d.period) { state.settings.period = d.period; persist(); return render({ keepScroll: true }); }
   if (d.edit) return editTransaction(Number(d.edit));
   if (d.finEdit) return panels.financing(Number(d.finEdit));
@@ -893,7 +1027,17 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && event.target.dataset?.budget !== undefined) event.target.blur();
 });
 $("#fab").addEventListener("click", () => (ui.page === "Financiamentos" ? panels.financing() : newTransaction()));
-$("#avatar").addEventListener("click", () => panels.profile());
+$("#avatar").addEventListener("click", () => go("Mais"));
+
+// Arrastar o cartão do mês para o lado troca de mês.
+let touchX = null;
+$("#view").addEventListener("touchstart", (e) => { touchX = e.target.closest("#mhero") ? e.touches[0].clientX : null; }, { passive: true });
+$("#view").addEventListener("touchend", (e) => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX;
+  touchX = null;
+  if (Math.abs(dx) > 60) stepMonth(dx < 0 ? 1 : -1);
+});
 $("#tabs").addEventListener("click", (event) => { const b = event.target.closest("button"); if (b) go(b.dataset.page); });
 $("#file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
@@ -931,6 +1075,7 @@ const app = {
 panels = createPanels(app);
 lock = createLock(app);
 
+hydrateIcons();
 applyTheme();
 if (!DEMO && lock.enabled()) lock.show();
 render();

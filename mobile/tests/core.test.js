@@ -9,6 +9,7 @@ import {
 } from "../core.js";
 import { PIN_RE, b64ToBytes, bytesToB64, hashPin, lockoutSeconds, verifyPin } from "../security.js";
 import { backupData, defaults, sanitize } from "../store.js";
+import { ICON_NAMES, badge, categoryMeta, icon, typeMeta } from "../icons.js";
 import { assert, close, deepEqual, equal, report, test, throws } from "./harness.js";
 
 const TODAY = "2026-10-16";
@@ -506,6 +507,36 @@ test("backup leva tudo, menos o bloqueio e os ids", () => {
   assert(!("lock" in b) && !("nextId" in b));
   assert(!JSON.stringify(b).includes("ABCDEFGH12") && !JSON.stringify(b).includes('"hash"'));
   deepEqual([b.cards.length, "id" in b.transactions[0], b.transactions[0].type], [1, false, "Pix"]);
+});
+
+test("ícones: categorias e tipos conhecidos têm ícone e cor fixos", () => {
+  deepEqual(categoryMeta("Alimentação"), { icon: "utensils", color: "#F59E0B" });
+  deepEqual(categoryMeta("Moradia"), { icon: "home", color: "#60A5FA" });
+  equal(typeMeta("Pix").icon, "pix");
+  equal(typeMeta("Boleto").icon, "barcode");
+  equal(typeMeta("Cartão Nubank", ["Cartão Nubank"]).icon, "card");
+  for (const name of ["Alimentação", "Moradia", "Transporte", "Saúde", "Educação", "Lazer", "Tecnologia", "Cartão", "Trabalho", "Investimentos", "Outros", "Financiamento"]) {
+    assert(ICON_NAMES.includes(categoryMeta(name).icon), name);
+  }
+});
+
+test("ícones: nomes novos ganham palpite ou ícone genérico com cor estável", () => {
+  equal(categoryMeta("Mercado do bairro").icon, categoryMeta("Mercado do bairro").icon);
+  const a = categoryMeta("Coisa sem nome xyz"), b = categoryMeta("Coisa sem nome xyz");
+  deepEqual(a, b, "a mesma categoria sempre tem a mesma cor");
+  assert(ICON_NAMES.includes(a.icon) && /^#[0-9A-F]{6}$/i.test(a.color));
+  assert(ICON_NAMES.includes(typeMeta("Vale refeição").icon));
+  assert(icon("gear").startsWith("<svg") && icon("nao-existe").startsWith("<svg"), "ícone desconhecido não quebra a tela");
+  assert(badge({ icon: "pix", color: "#2DD4BF" }).includes("--ic:#2DD4BF"));
+});
+
+test("foto do perfil: só imagem embutida e pequena", () => {
+  const ok = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+  equal(sanitize({ profile: { name: "Ana", photo: ok } }).profile.photo, ok);
+  for (const bad of ["https://exemplo.com/foto.jpg", "data:text/html;base64,PGgxPg==", "data:image/svg+xml;base64,PHN2Zz4=", 'data:image/png;base64,AA"onerror=x', "data:image/png;base64," + "A".repeat(600_000), 42]) {
+    equal(sanitize({ profile: { name: "Ana", photo: bad } }).profile.photo, null, String(bad).slice(0, 30));
+  }
+  equal(defaults().profile.photo, null);
 });
 
 export const outcome = await report();

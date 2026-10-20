@@ -24,7 +24,7 @@
         <h1 id="title">Visão geral</h1>
         <p id="subtitle"></p>
       </div>
-      <button class="avatar" id="avatar" type="button" aria-label="Perfil"></button>
+      <button class="avatar" id="avatar" type="button" aria-label="Configurações"></button>
     </header>
 
     <div class="seg period" id="period" role="radiogroup" aria-label="Período"></div>
@@ -38,26 +38,11 @@
 
   <nav class="tabs" id="tabs" aria-label="Telas">
     <div class="tabs-inner">
-      <button type="button" data-page="Painel" aria-current="page">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>
-        <span>Painel</span>
-      </button>
-      <button type="button" data-page="Meses">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
-        <span>Meses</span>
-      </button>
-      <button type="button" data-page="Movimentações">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-        <span>Lista</span>
-      </button>
-      <button type="button" data-page="Orçamentos">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4"/></svg>
-        <span>Orçamentos</span>
-      </button>
-      <button type="button" data-page="Mais">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-        <span>Mais</span>
-      </button>
+      <button type="button" data-page="Painel" aria-current="page"><span class="ti" data-icon="layout"></span><span>Painel</span></button>
+      <button type="button" data-page="Meses"><span class="ti" data-icon="calendar"></span><span>Meses</span></button>
+      <button type="button" data-page="Movimentações"><span class="ti" data-icon="list"></span><span>Lista</span></button>
+      <button type="button" data-page="Orçamentos"><span class="ti" data-icon="pie"></span><span>Orçamentos</span></button>
+      <button type="button" data-page="Mais"><span class="ti" data-icon="gear"></span><span>Configurações</span></button>
     </div>
   </nav>
 
@@ -73,11 +58,11 @@
 
       <div class="seg freq" role="radiogroup" aria-label="Frequência">
         <label><input type="radio" name="freq" value="once" checked><span>Só este mês</span></label>
-        <label><input type="radio" name="freq" value="monthly"><span>↻ Fixo todo mês</span></label>
+        <label><input type="radio" name="freq" value="monthly"><span><span class="ii" data-icon="repeat"></span> Fixo todo mês</span></label>
       </div>
       <p class="hint freq-hint" id="freq-hint"></p>
 
-      <button type="button" class="link bank-link" id="bank-toggle">📋 Colar mensagem do banco (Pix, compra…)</button>
+      <button type="button" class="link bank-link" id="bank-toggle"><span class="ii" data-icon="clipboard"></span> Colar mensagem do banco (Pix, compra…)</button>
       <div class="bank" id="bank-wrap" hidden>
         <textarea id="bank-text" rows="3" placeholder="Cole aqui a notificação ou o SMS do banco. Ex.: Você recebeu um Pix de Ana Souza no valor de R$ 150,00"></textarea>
         <div class="bank-row"><button type="button" class="btn small" id="bank-go">Entender mensagem</button><span class="hint" id="bank-msg"></span></div>
@@ -108,10 +93,11 @@
         <input id="f-until" type="month">
       </label>
 
-      <label class="field">
+      <div class="field">
         <span>Categoria</span>
-        <select id="f-category"></select>
-      </label>
+        <button type="button" class="picker" id="f-category-btn" data-pick="category"></button>
+        <select id="f-category" hidden tabindex="-1" aria-hidden="true"></select>
+      </div>
       <label class="field" id="f-new-wrap" hidden>
         <span>Nome da nova categoria</span>
         <input id="f-new" type="text" maxlength="40" autocomplete="off">
@@ -123,10 +109,11 @@
         <datalist id="subs"></datalist>
       </label>
 
-      <label class="field">
+      <div class="field">
         <span>Nome do tipo (opcional)</span>
-        <select id="f-type"></select>
-      </label>
+        <button type="button" class="picker" id="f-type-btn" data-pick="type"></button>
+        <select id="f-type" hidden tabindex="-1" aria-hidden="true"></select>
+      </div>
       <label class="field" id="f-type-new-wrap" hidden>
         <span>Nome do novo tipo</span>
         <input id="f-type-new" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: Pix Itaú, Vale-refeição">
@@ -160,7 +147,7 @@
 
   <div class="lock" id="lock" role="dialog" aria-modal="true" aria-labelledby="lock-title" hidden>
     <div class="lock-card">
-      <img class="logo" src="icons/icon-192.png" alt="" width="72" height="72">
+      <div class="lock-face" id="lock-face"><img class="logo" src="icons/icon-192.png" alt="" width="72" height="72"></div>
       <h2 id="lock-title">Titanium bloqueado</h2>
       <p id="lock-sub" class="hint"></p>
       <button type="button" class="btn primary" id="lock-device">Desbloquear com o celular</button>

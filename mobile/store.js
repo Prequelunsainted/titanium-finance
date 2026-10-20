@@ -14,7 +14,7 @@ export const defaults = () => ({
   budgets: {},
   cards: [],
   types: [],
-  profile: { name: "", color: PROFILE_COLORS[0] },
+  profile: { name: "", color: PROFILE_COLORS[0], photo: null },
   lock: { device: null, pin: null, timeout: 1 },
   settings: {
     theme: "system", period: "Mês", lastKind: EXPENSE, lastCategory: "Alimentação", lastType: "",
@@ -85,6 +85,10 @@ export function sanitize(data) {
   const profile = data.profile ?? {};
   state.profile.name = str(profile.name);
   if (typeof profile.color === "string" && /^#[0-9a-f]{6}$/i.test(profile.color)) state.profile.color = profile.color;
+  // Foto do perfil: só imagem embutida (data URL) e pequena (o app reduz para 256×256 ao escolher).
+  if (typeof profile.photo === "string" && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(profile.photo) && profile.photo.length < 600_000) {
+    state.profile.photo = profile.photo;
+  }
 
   const lock = data.lock ?? {};
   if (typeof lock.device === "string" && /^[\w-]{8,512}$/.test(lock.device)) state.lock.device = lock.device;

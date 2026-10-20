@@ -8,6 +8,7 @@ import {
 import { PROFILE_COLORS } from "./store.js";
 import { LOCK_TIMEOUTS, PIN_RE, deviceLockAvailable, hashPin, registerDeviceLock } from "./security.js";
 import { $, esc, parseSigned } from "./util.js";
+import { icon } from "./icons.js";
 
 const SYSTEM_SHORT = { "sem-juros": "Sem juros", price: "Price", sac: "SAC" };
 const SYSTEM_HINTS = {
@@ -55,18 +56,62 @@ export function createPanels(app) {
 
   // ------------------------------------------------------------------ perfil
 
+  /** Reduz a foto escolhida para 256×256 (recorte central), para caber no armazenamento do celular. */
+  async function shrinkPhoto(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error("imagem"));
+        i.src = url;
+      });
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const canvas = Object.assign(document.createElement("canvas"), { width: 256, height: 256 });
+      canvas.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
+      return canvas.toDataURL("image/jpeg", 0.85);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   function profile() {
     const p = app.state.profile;
-    let color = p.color;
+    let color = p.color, photo = p.photo;
+    const face = () => photo ? `<img src="${photo}" alt="Sua foto">` : (p.name.trim().charAt(0).toUpperCase() ? esc(p.name.trim().charAt(0).toUpperCase()) : icon("user"));
+    const paint = () => {
+      const a = $("#p-avatar");
+      a.style.background = color;
+      a.innerHTML = face();
+      $("#p-nophoto").hidden = !photo;
+    };
     open({
       title: "Seu perfil",
-      body: `<label class="field"><span>Como devo te chamar?</span><input id="p-name" type="text" maxlength="40" value="${esc(p.name)}" placeholder="Seu nome" autocomplete="given-name"></label>
-        <div class="field"><span>Cor do avatar</span><div class="swatches">${PROFILE_COLORS.map((c) => `<button type="button" class="swatch" data-act="color" data-color="${c}" style="background:${c}" aria-pressed="${c === color}" aria-label="Cor ${c}"></button>`).join("")}</div></div>
-        <p class="hint">O nome aparece na saudação do painel e na tela de bloqueio. Tudo fica só neste aparelho: não existe conta nem login.</p>`,
-      actions: { color: (b) => { color = b.dataset.color; panel.querySelectorAll(".swatch").forEach((s) => s.setAttribute("aria-pressed", String(s === b))); } },
+      body: `<div class="pphoto"><span class="avatar xl" id="p-avatar"></span>
+          <div class="menu"><button type="button" class="btn" data-act="pick-photo">${icon("image")} Escolher da galeria</button>
+          <button type="button" class="btn danger" id="p-nophoto" data-act="no-photo">${icon("trash")} Remover foto</button></div>
+          <input type="file" id="p-file" accept="image/*" hidden></div>
+        <label class="field"><span>Como devo te chamar?</span><input id="p-name" type="text" maxlength="40" value="${esc(p.name)}" placeholder="Seu nome" autocomplete="given-name"></label>
+        <div class="field"><span>Cor do avatar (quando não há foto)</span><div class="swatches">${PROFILE_COLORS.map((c) => `<button type="button" class="swatch" data-act="color" data-color="${c}" style="background:${c}" aria-pressed="${c === color}" aria-label="Cor ${c}"></button>`).join("")}</div></div>
+        <p class="hint">O nome e a foto aparecem no topo do app e na tela de bloqueio. Ficam só neste aparelho: não existe conta nem login.</p>`,
+      actions: {
+        color: (b) => { color = b.dataset.color; panel.querySelectorAll(".swatch").forEach((s) => s.setAttribute("aria-pressed", String(s === b))); paint(); },
+        "pick-photo": () => { app.ui.skipRelockUntil = Date.now() + 60_000; $("#p-file").click(); },
+        "no-photo": () => { photo = null; paint(); },
+      },
+      mount: () => {
+        paint();
+        $("#p-file").addEventListener("change", async (e) => {
+          const file = e.target.files[0];
+          e.target.value = "";
+          if (!file) return;
+          try { photo = await shrinkPhoto(file); paint(); } catch { fail("Não consegui abrir essa imagem. Tente outra foto."); }
+        });
+      },
       submitFn: () => {
         app.state.profile.name = $("#p-name").value.replace(/\s+/g, " ").trim().slice(0, 40);
         app.state.profile.color = color;
+        app.state.profile.photo = photo;
         app.persist();
         app.toast("Perfil salvo.");
       },
@@ -79,14 +124,14 @@ export function createPanels(app) {
     const lock = app.state.lock, deviceOk = await deviceLockAvailable(), anyLock = Boolean(lock.device || lock.pin);
     const body = `
       <section class="pcard"><b>Senha, digital ou rosto do celular</b>
-        ${lock.device ? `<p class="hint ok">✓ Ativada: o app pede o mesmo desbloqueio do seu celular.</p><button type="button" class="btn" data-act="device-off">Desativar</button>`
+        ${lock.device ? `<p class="hint ok">${icon("check")} Ativada: o app pede o mesmo desbloqueio do seu celular.</p><button type="button" class="btn" data-act="device-off">Desativar</button>`
           : deviceOk ? `<p class="hint">O app passa a pedir a mesma senha, digital ou rosto que desbloqueia o seu celular. O app nunca vê nem guarda essa senha: quem confirma é o próprio Android/iPhone.</p><button type="button" class="btn primary" data-act="device-on">Ativar com a senha do celular</button>`
           : `<p class="hint">${window.isSecureContext ? "Este aparelho ou navegador não oferece o desbloqueio do sistema para sites." : "Para usar a senha do celular, abra o app pelo endereço https (a versão publicada)."} Você ainda pode usar o PIN do app.</p>`}
       </section>
       <section class="pcard"><b>PIN do app</b>
         ${mode === "pin" ? `<label class="field"><span>Novo PIN (4 a 8 números)</span><input id="pin1" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label>
             <label class="field"><span>Repita o PIN</span><input id="pin2" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label>`
-          : lock.pin ? `<p class="hint ok">✓ PIN definido.</p><div class="menu"><button type="button" class="btn" data-act="pin-new">Alterar PIN</button><button type="button" class="btn danger" data-act="pin-off">Remover PIN</button></div>`
+          : lock.pin ? `<p class="hint ok">${icon("check")} PIN definido.</p><div class="menu"><button type="button" class="btn" data-act="pin-new">Alterar PIN</button><button type="button" class="btn danger" data-act="pin-off">Remover PIN</button></div>`
           : `<p class="hint">Um PIN só do app, independente do celular. Útil se o desbloqueio do sistema não estiver disponível.</p><button type="button" class="btn" data-act="pin-new">Definir PIN</button>`}
       </section>
       ${anyLock ? `<label class="field"><span>Pedir de novo</span><select id="lk-timeout">${LOCK_TIMEOUTS.map(([v, label]) => `<option value="${v}" ${v === lock.timeout ? "selected" : ""}>${label}</option>`).join("")}</select></label>` : ""}
@@ -236,7 +281,7 @@ export function createPanels(app) {
       cancel: "Concluído",
       body: `<p class="hint">Mostre só o que importa para você e mude a ordem. Os blocos escondidos podem voltar a qualquer momento.</p>
         <ul class="wlist">${list.map((w, i) => `<li><label class="switch"><input type="checkbox" data-wtoggle="${w.id}" ${w.visible ? "checked" : ""}><span>${esc(w.title)}</span></label>
-          <span class="wmove"><button type="button" data-act="up" data-id="${w.id}" ${i === 0 ? "disabled" : ""} aria-label="Subir ${esc(w.title)}">↑</button><button type="button" data-act="down" data-id="${w.id}" ${i === list.length - 1 ? "disabled" : ""} aria-label="Descer ${esc(w.title)}">↓</button></span></li>`).join("")}</ul>`,
+          <span class="wmove"><button type="button" data-act="up" data-id="${w.id}" ${i === 0 ? "disabled" : ""} aria-label="Subir ${esc(w.title)}">${icon("arrowUp")}</button><button type="button" data-act="down" data-id="${w.id}" ${i === list.length - 1 ? "disabled" : ""} aria-label="Descer ${esc(w.title)}">${icon("arrowDown")}</button></span></li>`).join("")}</ul>`,
       extra: `<button type="button" class="btn" data-act="reset">Restaurar padrão</button>`,
       actions: {
         up: (b) => { app.moveWidget(b.dataset.id, -1); customize(); },
